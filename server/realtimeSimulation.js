@@ -138,7 +138,7 @@ export class SimulationClock {
   resume(speed=1){this.setSpeed(speed || 1);}
   advanceWallClock(nowMs, onDays) {
     const now=Number(nowMs);
-    const previous=this.clock.lastWallClockMs || now;
+    const previous=this.clock.lastWallClockMs == null ? now : this.clock.lastWallClockMs;
     let elapsed=Math.max(0,now-previous);
     this.clock.lastWallClockMs=now;
     if(this.clock.paused || this.clock.speed===0) return 0;
