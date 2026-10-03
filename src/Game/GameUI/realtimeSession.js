@@ -59,7 +59,7 @@ export function useRealtimeSession(){
 
   const start=useCallback(()=>{
     if(!activeGame?.id){setSession((s)=>({...s,status:"error",error:"Primero abre una partida real de Open Historia."}));return;}
-    connect({type:"CREATE_ROOM",gameId:activeGame.id,mode:"multi",name:activeGame.name,playerName:activeGame.country||"Player",countryCode:activeGame.country});
+    connect({type:"CREATE_ROOM",gameId:activeGame.id,mode:"multi",name:activeGame.name,playerName:activeGame.country||"Player",countryCode:activeGame.country||""});
   },[activeGame,connect]);
 
   const join=useCallback((roomId)=>{
