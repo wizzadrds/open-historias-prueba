@@ -3523,7 +3523,7 @@ const LibraryTopBar = () => {
             >
               <button
                 className="oh-tap-row"
-                onClick={() => window.dispatchEvent(new CustomEvent("oh:open-realtime-menu"))}
+                onClick={() => window.dispatchEvent(new CustomEvent("oh:start-realtime"))}
                 style={touchFit({
                   ...actionButtonStyle,
                   background: "rgba(214,179,106,0.14)",
@@ -3534,7 +3534,7 @@ const LibraryTopBar = () => {
                 }, touch)}
                 type="button"
               >
-                {isMobile ? "▶" : "Play"}
+                {isMobile ? "◎" : "Multiplayer"}
               </button>
               {["games", "scenarios", "community"].map((tab) => (
                 <button
