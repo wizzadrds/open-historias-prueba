@@ -52,6 +52,7 @@ import { MAP_SETTING_KEYS, getMapSettingDefaultOn, useMapSetting } from "../../r
 import { formatGameDateReadable, isGameDate, normalizeGameDate } from "../../runtime/gameDates.js";
 import { jumpDayStep, jumpTargetDate } from "../../runtime/jumpDates.js";
 import { useRealtimeSessionState } from "./realtimeSession.js";
+import { useRealtimeSessionState } from "./realtimeSession.js";
 
 dayjs.extend(advancedFormat);
 
@@ -2070,6 +2071,7 @@ const DateWidget = ({
     const gameData = useRuntimeState("game");
     const events = useRuntimeState("events");
     const worldState = useRuntimeState("world");
+    const realtime = useRealtimeSessionState();
     const realtime = useRealtimeSessionState();
     const setGameData = (game) => primeRuntimeValue("game", game);
     const setEvents = (next) => primeRuntimeValue("events", next);
