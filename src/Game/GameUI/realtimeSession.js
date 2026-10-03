@@ -35,23 +35,38 @@ export function useRealtimeSession(){
     pendingRef.current=message;
     if(socketRef.current?.readyState===WebSocket.OPEN){send(socketRef.current,message);return;}
     if(socketRef.current)return;
-    setSession((s)=>({...s,status:"connecting",error:""}));
-    const socket=new WebSocket(wsUrl());
-    socketRef.current=socket;
-    socket.onopen=()=>{
-      if(socketRef.current!==socket)return;
-      setSession((s)=>({...s,status:"connected",error:""}));
-      if(pendingRef.current)send(socket,pendingRef.current);
-    };
-    socket.onclose=()=>{
-      if(socketRef.current!==socket)return;
-      socketRef.current=null;
-      setSession((s)=>({...s,status:"disconnected"}));
-    };
-    socket.onerror=()=>setSession((s)=>({...s,status:"error",error:"No se pudo conectar al servidor multijugador."}));
-    socket.onmessage=async(event)=>{
-      let message;
-      try{message=JSON.parse(event.data);}catch{return;}
+    setSession((s)=>({...s,status:"connecting",error:"Conectando al servidor multijugador…"}));
+    let failed=false;
+    let timeoutId=null;
+    try{
+      const socket=new WebSocket(wsUrl());
+      socketRef.current=socket;
+      timeoutId=setTimeout(()=>{
+        if(socketRef.current!==socket||socket.readyState===WebSocket.OPEN)return;
+        failed=true;
+        socket.close();
+        socketRef.current=null;
+        setSession((s)=>({...s,status:"error",error:"No se pudo conectar al servidor multijugador. En local, inicia node server/server.js y vuelve a intentarlo."}));
+      },8000);
+      socket.onopen=()=>{
+        if(socketRef.current!==socket)return;
+        if(timeoutId)clearTimeout(timeoutId);
+        setSession((s)=>({...s,status:"connected",error:""}));
+        if(pendingRef.current)send(socket,pendingRef.current);
+      };
+      socket.onclose=()=>{
+        if(timeoutId)clearTimeout(timeoutId);
+        if(socketRef.current!==socket)return;
+        socketRef.current=null;
+        if(failed)return;
+        setSession((s)=>s.status==="error"?s:{...s,status:"disconnected",error:"La conexión multijugador se cerró."});
+      };
+      socket.onerror=()=>{
+        failed=true;
+        if(timeoutId)clearTimeout(timeoutId);
+        setSession((s)=>({...s,status:"error",error:"No se pudo conectar al servidor multijugador. En local, inicia node server/server.js y vuelve a intentarlo."}));
+      };
+      socket.onmessage=async(event)=>{
       if(message.type==="ROOM_LIST"){const next={...sessionRef.current,rooms:Array.isArray(message.rooms)?message.rooms:[]};sessionRef.current=next;setSession(next);publishRealtimeSession(next);
       }else if(message.type==="ROOM_CREATED"||message.type==="ROOM_JOINED"){
         const gameId=String(message.gameId||message.snapshot?.gameId||"");
