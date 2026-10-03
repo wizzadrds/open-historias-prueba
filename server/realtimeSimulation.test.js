@@ -99,3 +99,16 @@ test("realtime uses the active game's polity roster instead of a hardcoded count
   assert.equal(resolveRealtimeCountryCode("España",state.countries),"España");
   assert.equal(Object.keys(state.countries).length,4);
 });
+
+
+test("realtime room state keeps the real campaign timeline and world",()=>{
+  const world={regionOwnershipOverrides:{"1":"United States","2":"Spain"}};
+  const game={country:"United States",startDate:"2016-01-01",gameDate:"2016-01-01"};
+  const state=createInitialRealtimeState({id:"campaign",gameId:"game-1",startDate:game.gameDate,world,gameData:game});
+  assert.equal(state.clock.date,"2016-01-01");
+  assert.equal(state.game.gameDate,"2016-01-01");
+  assert.deepEqual(state.world,world);
+  tickSimulation(state,1);
+  assert.equal(state.clock.date,"2016-01-02");
+  assert.equal(state.game.gameDate,"2016-01-02");
+});
