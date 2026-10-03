@@ -68,7 +68,7 @@ import {
   relayTargetAllowed,
   sanitizeRelayHeaders,
 } from "./security.js";
-import { appendLog, clearLog, readLogSince } from "./logStore.js";
+import { appendLog, clearLog, readLogSince } from "./logStore.js";\nimport { attachRealtimeMultiplayer } from "./realtimeMultiplayer.js";
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 import { DATA_DIR } from "./dataDir.js";
@@ -1466,7 +1466,7 @@ export const httpServer = app.listen(PORT, HOST, () => {
   describeBinding();
 });
 
-// Move the listener to a different interface in place, so the LAN toggle takes
+\n\n// Realtime strategy transport. The legacy HTTP/turn systems remain intact; realtime\n// rooms share the same process but have their own authoritative state and clock.\nexport const realtimeMultiplayer = attachRealtimeMultiplayer(httpServer);\nconst realtimeBroadcastTimer = setInterval(() => realtimeMultiplayer.tickBroadcast(), 250);\nrealtimeBroadcastTimer.unref?.();\n\n// Move the listener to a different interface in place, so the LAN toggle takes
 // effect immediately instead of asking the player to restart a game they are in
 // the middle of. Node lets a closed server listen() again; if the new bind
 // fails (something else already holds the port on that interface) we go back to
