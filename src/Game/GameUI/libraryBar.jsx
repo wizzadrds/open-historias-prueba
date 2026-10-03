@@ -3153,6 +3153,7 @@ const LibraryTopBar = () => {
 
   return (
     <>
+      {realtimeStatus}
       {/* In-game the full-width top bar is gone — the map gets the space. What
           remains is a compact floating cluster beside the ⋮ settings button: a
           small sleek pill with the session summary, plus Exit Game.
