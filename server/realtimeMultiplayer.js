@@ -38,8 +38,8 @@ const json=(socket,value)=>{try{socket.write(encodeFrame(JSON.stringify(value)))
 const id=()=>crypto.randomBytes(12).toString("base64url");
 
 export class RealtimeMultiplayer {
-  constructor(server,{store=new RealtimeRoomStore()}={}) {
-    this.server=server;this.store=store;this.clients=new Map();
+  constructor(server,{store=new RealtimeRoomStore(),gameLoader=getGameDetails}={}) {
+    this.server=server;this.store=store;this.gameLoader=gameLoader;this.clients=new Map();
     server.on("upgrade",(req,socket)=>{
       if(!req.url?.startsWith("/ws/realtime")) return;
       this.upgrade(req,socket);
@@ -107,7 +107,7 @@ export class RealtimeMultiplayer {
     const playerId=normalizePlayerId(m.playerId)||id();
     const gameId=String(m.gameId||"").trim();
     if(!gameId) throw new Error("A multiplayer room must be attached to an existing Open Historia game");
-    const details=getGameDetails(gameId);
+    const details=this.gameLoader(gameId);
     const gameData=details?.data?.game||{};
     const state=this.store.create({mode:"multi",name:m.name||details?.game?.name||"Multiplayer",seed:Number(m.seed)||19200101,gameId,scenarioId:details?.game?.scenarioId||details?.scenario?.id||"",startDate:gameData.gameDate||gameData.startDate||"1920-01-01"});
     const countries=Object.keys(state.countries);
