@@ -409,6 +409,7 @@ export class RealtimeRoomStore {
     return days;
   }
   save(state){state.lastSavedAt=Date.now();writeJsonAtomic(roomPath(state.id),state);}
+  list(){ensureDir();const ids=new Set(this.rooms.keys());try{for(const file of fs.readdirSync(DATA_DIR)){if(file.startsWith("rt-")&&file.endsWith(".json"))ids.add(file.slice(0,-5));}}catch{/* data directory may be empty */}return [...ids].map(id=>this.load(id)).filter(Boolean).map(state=>({id:state.id,name:state.name,mode:state.mode,date:state.clock?.date||"1920-01-01",speed:state.clock?.speed||0,players:Object.values(state.players||{}).map(p=>({name:p.name,countryCode:p.countryCode,connected:!!p.connected})),playerCount:Object.keys(state.players||{}).length}));}
   close(roomId){const t=this.timers.get(roomId);if(t) clearInterval(t);this.timers.delete(roomId);const s=this.rooms.get(roomId);if(s)this.save(s);}
 }
 
