@@ -67,8 +67,8 @@ export function useRealtimeSession(){
         setSession((s)=>({...s,status:"error",error:"No se pudo conectar al servidor multijugador. En local, inicia node server/server.js y vuelve a intentarlo."}));
       };
       socket.onmessage=async(event)=>{
-      if(message.type==="ROOM_LIST"){const next={...sessionRef.current,rooms:Array.isArray(message.rooms)?message.rooms:[]};sessionRef.current=next;setSession(next);publishRealtimeSession(next);
-      }else if(message.type==="ROOM_CREATED"||message.type==="ROOM_JOINED"){
+        if(message.type==="ROOM_LIST"){const next={...sessionRef.current,rooms:Array.isArray(message.rooms)?message.rooms:[]};sessionRef.current=next;setSession(next);publishRealtimeSession(next);
+        }else if(message.type==="ROOM_CREATED"||message.type==="ROOM_JOINED"){
         const gameId=String(message.gameId||message.snapshot?.gameId||"");
         const player=message.snapshot?.players?.[message.playerId];
         const countryCode=String(message.countryCode||player?.countryCode||"");
@@ -80,15 +80,19 @@ export function useRealtimeSession(){
         }
         await applyServerWorld(message.snapshot||{},gameId,message.roomId||"",message.playerId||"",countryCode);
         window.dispatchEvent(new CustomEvent("oh:realtime-session-changed",{detail:{active:true,gameId,roomId:message.roomId,countryCode}}));
-      }else if(["TIME_UPDATE","BUILDING_UPDATE","RESEARCH_UPDATE","UNIT_UPDATE","EVENT_RESOLVED","WORLD_UPDATE"].includes(message.type)){
+        }else if(["TIME_UPDATE","BUILDING_UPDATE","RESEARCH_UPDATE","UNIT_UPDATE","EVENT_RESOLVED","WORLD_UPDATE"].includes(message.type)){
         realtimeSnapshotRef.current=mergeRealtimeSnapshot(realtimeSnapshotRef.current,message.snapshot||{});
         const next={...sessionRef.current,clock:realtimeSnapshotRef.current.clock||sessionRef.current.clock};sessionRef.current=next;setSession(next);publishRealtimeSession(next);
         await applyServerWorld(realtimeSnapshotRef.current,next.gameId,next.roomId,next.playerId,next.countryCode);
-      }else if(message.type==="ERROR"){
+        }else if(message.type==="ERROR"){
         const next={...sessionRef.current,status:"error",error:message.error||"El servidor rechazó la operación."};sessionRef.current=next;setSession(next);publishRealtimeSession(next);
       }
-    };
+      };
+    }catch(error){
+      setSession((s)=>({...s,status:"error",error:error?.message||"No se pudo abrir la conexión multijugador."}));
+    }
   },[activeGame?.id]);
+
 
   const listRooms=useCallback(()=>connect({type:"LIST_ROOMS"}),[connect]);
 
