@@ -252,12 +252,13 @@ export function RealtimeStrategy(){
    case"ERROR":setError(m.error||"Server rejected the operation.");break;
    default:break;
  } }catch(err){console.error("Realtime message error",err);setError("Realtime message could not be read.");}};},[]);
+ useEffect(()=>{const openMenu=()=>setOpen(true);window.addEventListener("oh:open-realtime-menu",openMenu);return()=>window.removeEventListener("oh:open-realtime-menu",openMenu);},[]);
  useEffect(()=>{if(open)connect();return()=>{};},[open,connect]);
  useEffect(()=>()=>socketRef.current?.close(),[]);
  const command=useCallback((action,payload)=>{setError("");send(socketRef.current,{type:"COMMAND",action,payload});},[]);
  const t=(en,es)=>language==="es"?es:en;
  const create=(scenario="classic",requestedMode=mode)=>send(socketRef.current,{type:"CREATE_ROOM",mode:requestedMode,name:requestedMode==="multi"?"Open Historia · Multiplayer 1920":"Open Historia · 1920 Campaign",scenario,playerName,countryCode:country});
  const join=(id=joinId)=>send(socketRef.current,{type:"JOIN_ROOM",roomId:id,playerId:localStorage.getItem("oh:rt:playerId")||undefined,playerName,countryCode:country});
- if(!open)return <div style={css.root}><button type="button" style={css.launcher} onClick={()=>setOpen(true)}>◈ <b>OPEN HISTORIA</b></button></div>;
+ if(!open)return null;
  return <RealtimeBoundary>{room?<Hub room={room} setRoom={setRoom} playerId={playerId} socket={socket} country={country} command={command} error={error}/>:<MainMenu connected={connected} onCreate={create} onJoin={join} playerName={playerName} setPlayerName={setPlayerName} country={country} setCountry={setCountry} joinId={joinId} setJoinId={setJoinId} error={error} mode={mode} setMode={setMode} rooms={rooms} setRooms={setRooms} t={t} language={language} setLanguage={setLanguage}/>}</RealtimeBoundary>;
 }
