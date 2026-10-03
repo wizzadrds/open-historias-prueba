@@ -68,7 +68,8 @@ import {
   relayTargetAllowed,
   sanitizeRelayHeaders,
 } from "./security.js";
-import { appendLog, clearLog, readLogSince } from "./logStore.js";\nimport { attachRealtimeMultiplayer } from "./realtimeMultiplayer.js";
+import { appendLog, clearLog, readLogSince } from "./logStore.js";
+import { attachRealtimeMultiplayer } from "./realtimeMultiplayer.js";
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 import { DATA_DIR } from "./dataDir.js";
