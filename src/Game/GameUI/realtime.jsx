@@ -36,7 +36,7 @@ const css={
 const safeArray=(v)=>Array.isArray(v)?v.filter(Boolean):[];
 const countryName=(code)=>COUNTRIES.find(x=>x[0]===code)?.[1]||code||"Unknown";
 const fmt=(n)=>Number(n||0).toLocaleString("en-US",{maximumFractionDigits:0});
-const wsUrl=()=>{const proto=location.protocol==="https:"?"wss":"ws";return proto+"://"+location.host+"/ws/realtime";};
+const wsUrl=()=>{const proto=location.protocol==="https:"?"wss":"ws";const host=location.hostname||"localhost";const port=import.meta.env.DEV?"3000":location.port;return proto+"://"+host+(port?":"+port:"")+"/ws/realtime";};
 const send=(socket,msg)=>{if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify(msg));};
 
 class RealtimeBoundary extends Component{
