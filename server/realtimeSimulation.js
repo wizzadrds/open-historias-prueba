@@ -78,6 +78,17 @@ const makeCountry = ([code,name,population,money,food,energy,rawMaterials,indust
 
 const defaultCountries = () => Object.fromEntries(COUNTRY_SEED.map(seed => [seed[0],makeCountry(seed)]));
 
+export function resolveRealtimeCountryCode(value) {
+  const raw=String(value??"").trim();
+  if(!raw) return "";
+  const upper=raw.toUpperCase();
+  if(COUNTRY_SEED.some(([code])=>code===upper)) return upper;
+  const lower=raw.toLowerCase();
+  const exact=COUNTRY_SEED.find(([,name])=>String(name).toLowerCase()===lower);
+  return exact?.[0]||"";
+}
+
+
 const nextId = (prefix, state) => {
   state.sequence += 1;
   return `${prefix}-${state.sequence.toString(36)}`;
