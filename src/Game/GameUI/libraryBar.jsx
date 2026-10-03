@@ -39,6 +39,7 @@ import {
   writeGameSnapshotsText,
 } from "../../runtime/library.js";
 import { loadCountryNames, readJson, writeJson, JSON_URLS } from "../../runtime/assets.js";
+import { useRealtimeSession } from "./realtimeSession.js";
 import { LABEL_FONT_SUGGESTIONS } from "../../runtime/mapSettings.js";
 import FactionCreator from "./FactionCreator.jsx";
 import FeaturesSectionEditor from "./FeaturesSectionEditor.jsx";
@@ -1608,6 +1609,7 @@ const LibraryTopBar = () => {
     scenarios,
     selectedScenarioId,
   } = useLibraryState();
+  const realtime = useRealtimeSession();
   const [activeTab, setActiveTab] = useState("games");
   const [menuOpen, setMenuOpenState] = useState(menuOpenDefault);
   // Whether the menu was opened from inside a game (⌂ Exit Game, or the game
@@ -3523,7 +3525,17 @@ const LibraryTopBar = () => {
             >
               <button
                 className="oh-tap-row"
-                onClick={() => window.dispatchEvent(new CustomEvent("oh:start-realtime"))}
+                onClick={() => {
+                  if (realtime.status === "in-game" || realtime.status === "connecting" || realtime.status === "connected") return;
+                  if (!activeGame?.id) {
+                    setActiveTab("games");
+                    setMenuOpen(true);
+                    setEditorError("Crea o abre una partida de Open Historia antes de iniciar el multijugador.");
+                    return;
+                  }
+                  realtime.start();
+                  setMenuOpen(false);
+                }}
                 style={touchFit({
                   ...actionButtonStyle,
                   background: "rgba(214,179,106,0.14)",
@@ -3534,7 +3546,7 @@ const LibraryTopBar = () => {
                 }, touch)}
                 type="button"
               >
-                {isMobile ? "◎" : "Multijugador"}
+                {isMobile ? "◎" : realtime.status === "connecting" ? "Conectando…" : realtime.status === "in-game" ? "Online" : "Multijugador"}
               </button>
               {["games", "scenarios", "community"].map((tab) => (
                 <button
