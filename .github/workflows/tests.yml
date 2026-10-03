@@ -46,9 +46,11 @@ jobs:
       # fallback — which is exactly what happened when it lapsed on 2026-08-12 and
       # nobody noticed for six weeks. Fail here two weeks before it lapses again.
       - name: Lint
+        if: ${{ always() }}
         run: npm run lint
 
       - name: Build
+        if: ${{ always() }}
         run: npm run build
 
       - name: The content manifest is not about to expire
