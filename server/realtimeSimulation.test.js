@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createInitialRealtimeState, SimulationClock, tickSimulation, command, addPlayer, SPEEDS } from "./realtimeSimulation.js";
+import { buildRealtimeCountryDefinitions, createInitialRealtimeState, SimulationClock, tickSimulation, command, addPlayer, resolveRealtimeCountryCode, SPEEDS } from "./realtimeSimulation.js";
 
 test("simulation clock is server authoritative and speed is bounded",()=>{
   const clock=new SimulationClock({date:"1920-01-01",speed:1,paused:false,lastWallClockMs:0,accumulatorMs:0});
@@ -74,4 +74,28 @@ test("host-only time controls and event choices are authoritative",()=>{
   command(s,"player04","ACTION",{type:"food_crisis"});
   const e=s.events[0];
   assert.throws(()=>command(s,"player05","EVENT_CHOICE",{eventId:e.id,choiceId:"subsidize"}),/Event not available/);
+});
+
+test("realtime uses the active game's polity roster instead of a hardcoded country list",()=>{
+  const world={
+    regionOwnershipOverrides:{
+      "1":"United States",
+      "2":"Spain",
+      "3":"Canada",
+      "4":"España",
+    },
+    polityOverrides:{
+      "United States":{name:"United States"},
+      "Spain":{name:"Spain"},
+      "Canada":{name:"Canada"},
+    },
+  };
+  const definitions=buildRealtimeCountryDefinitions(world);
+  const state=createInitialRealtimeState({id:"real-world",world,countryDefinitions:definitions});
+  assert.ok(state.countries["United States"]);
+  assert.ok(state.countries.Spain);
+  assert.ok(state.countries.Canada);
+  assert.equal(resolveRealtimeCountryCode("Spain",state.countries),"Spain");
+  assert.equal(resolveRealtimeCountryCode("España",state.countries),"España");
+  assert.equal(Object.keys(state.countries).length,4);
 });
