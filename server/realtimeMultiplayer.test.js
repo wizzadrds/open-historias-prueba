@@ -48,3 +48,20 @@ test("foreign clients cannot use a player's command channel to change time",()=>
  rt.message(guest,{type:"JOIN_ROOM",roomId:host.roomId,playerId:"player22",playerName:"Guest",countryCode:"FRA"});
  assert.throws(()=>rt.message(guest,{type:"COMMAND",action:"SET_SPEED",payload:{speed:8}}),/Only the host/);
 });
+
+
+test("human diplomacy creates an expiring request and only the recipient can answer",()=>{
+ const server=new FakeServer(),store=new MemoryStore(),rt=new RealtimeMultiplayer(server,{store});
+ const host={socket:{write(){}},commands:[]};
+ rt.message(host,{type:"CREATE_ROOM",mode:"multi",playerId:"player31",playerName:"Host",countryCode:"GBR"});
+ const guest={socket:{write(){}},commands:[]};
+ rt.message(guest,{type:"JOIN_ROOM",roomId:host.roomId,playerId:"player32",playerName:"Guest",countryCode:"FRA"});
+ rt.message(host,{type:"DIPLOMACY_REQUEST",targetCountry:"FRA",message:"Open talks"});
+ const state=store.load(host.roomId);
+ assert.equal(state.diplomacyRequests.length,1);
+ assert.equal(state.diplomacyRequests[0].status,"pending");
+ assert.equal(state.diplomacyRequests[0].expiresAt,"1920-01-11");
+ assert.throws(()=>rt.message(host,{type:"DIPLOMACY_RESPONSE",requestId:state.diplomacyRequests[0].id,accepted:true}),/Only the recipient/);
+ rt.message(guest,{type:"DIPLOMACY_RESPONSE",requestId:state.diplomacyRequests[0].id,accepted:true});
+ assert.equal(state.diplomacyRequests[0].status,"accepted");
+});
