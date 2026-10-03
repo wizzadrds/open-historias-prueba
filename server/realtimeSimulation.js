@@ -78,14 +78,56 @@ const makeCountry = ([code,name,population,money,food,energy,rawMaterials,indust
 
 const defaultCountries = () => Object.fromEntries(COUNTRY_SEED.map(seed => [seed[0],makeCountry(seed)]));
 
-export function resolveRealtimeCountryCode(value) {
+const normalizeCountryToken = (value) => String(value ?? "").trim().toLowerCase();
+const countryDefinitionsFromWorld = (world) => {
+  const definitions = new Map();
+  const add = (value) => {
+    const name = String(value ?? "").trim();
+    if (!name) return;
+    const key = normalizeCountryToken(name);
+    if (!definitions.has(key)) definitions.set(key, { code:name, name });
+  };
+  const overrides = world?.regionOwnershipOverrides;
+  if (overrides && typeof overrides === "object") Object.values(overrides).forEach(add);
+  const polities = world?.polityOverrides;
+  if (polities && typeof polities === "object") {
+    for (const [key, polity] of Object.entries(polities)) add(polity?.name || key);
+  }
+  return [...definitions.values()];
+};
+
+const countriesFromDefinitions = (definitions) => {
+  const entries = Array.isArray(definitions) ? definitions : [];
+  if (!entries.length) return defaultCountries();
+  const countries = {};
+  for (const entry of entries) {
+    const name = String(entry?.name ?? entry?.code ?? "").trim();
+    const code = String(entry?.code ?? name).trim();
+    if (!name || !code || countries[code]) continue;
+    countries[code] = makeCountry([code,name,20_000_000,8000,7000,6000,7000,100]);
+  }
+  return Object.keys(countries).length ? countries : defaultCountries();
+};
+
+export function resolveRealtimeCountryCode(value, countries = null) {
   const raw=String(value??"").trim();
   if(!raw) return "";
   const upper=raw.toUpperCase();
+  if(countries && typeof countries === "object") {
+    if(countries[raw]) return raw;
+    const exact=Object.keys(countries).find((code)=>String(code).toLowerCase()===raw.toLowerCase());
+    if(exact) return exact;
+    const byName=Object.values(countries).find((country)=>String(country?.name||"").toLowerCase()===raw.toLowerCase());
+    if(byName) return byName.code;
+  }
   if(COUNTRY_SEED.some(([code])=>code===upper)) return upper;
-  const lower=raw.toLowerCase();
-  const exact=COUNTRY_SEED.find(([,name])=>String(name).toLowerCase()===lower);
+  const lower=normalizeCountryToken(raw);
+  const exact=COUNTRY_SEED.find(([,name])=>normalizeCountryToken(name)===lower);
   return exact?.[0]||"";
+}
+
+export function buildRealtimeCountryDefinitions(world) {
+  return countryDefinitionsFromWorld(world);
 }
 
 
@@ -113,11 +155,11 @@ const addModifier = (country, modifiers, factor=1) => {
 
 const effective = (country,key,base) => base * (1 + (country.modifiers[key] || 0));
 
-export function createInitialRealtimeState({id,mode="single",name="1920 Campaign",seed=19200101,createdAt=Date.now(),gameId="",scenarioId="",startDate=REALTIME_START_DATE}={}) {
+export function createInitialRealtimeState({id,mode="single",name="1920 Campaign",seed=19200101,createdAt=Date.now(),gameId="",scenarioId="",startDate=REALTIME_START_DATE,world=null,countryDefinitions=null}={}) {
   const state = {
     version:1,id,mode,name,seed,gameId:String(gameId||""),scenarioId:String(scenarioId||""),sequence:0,createdAt,lastSavedAt:createdAt,
     clock:{date:String(startDate||REALTIME_START_DATE),speed:1,paused:false,lastWallClockMs:createdAt,accumulatorMs:0},
-    countries:defaultCountries(),
+    countries:countriesFromDefinitions(countryDefinitions?.length ? countryDefinitions : countryDefinitionsFromWorld(world)),
     players:{},rooms:{hostPlayerId:null},
     events:[],notifications:[],chat:[],diplomacyRequests:[],rules:{
       startDate:REALTIME_START_DATE,allowHumanDiplomacy:true,aiCountries:true,maxPlayers:8,
