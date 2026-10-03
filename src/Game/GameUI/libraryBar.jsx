@@ -3521,6 +3521,21 @@ const LibraryTopBar = () => {
                 scrollbarWidth: "none",
               }}
             >
+              <button
+                className="oh-tap-row"
+                onClick={() => window.dispatchEvent(new CustomEvent("oh:open-realtime-menu"))}
+                style={touchFit({
+                  ...actionButtonStyle,
+                  background: "rgba(214,179,106,0.14)",
+                  borderColor: "rgba(214,179,106,0.32)",
+                  color: "#fff",
+                  minWidth: isMobile ? "0" : "6.6rem",
+                  padding: isMobile ? "0.55rem 0.6rem" : undefined,
+                }, touch)}
+                type="button"
+              >
+                {isMobile ? "▶" : "Play"}
+              </button>
               {["games", "scenarios", "community"].map((tab) => (
                 <button
                   key={tab}
