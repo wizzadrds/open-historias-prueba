@@ -129,7 +129,7 @@ export class RealtimeMultiplayer {
     const state=this.store.load(client.roomId);
     command(state,client.playerId,m.action,m.payload||{});
     this.store.save(state);
-    this.broadcast(client.roomId,{type:this.eventTypeFor(m.action),action:m.action,revision:state.sequence,snapshot:this.publicDelta(state,m.action)});
+    this.broadcast(client.roomId,{type:this.eventTypeFor(m.action),action:m.action,revision:state.sequence,snapshot:this.publicDelta(state,m.action,client.playerId)});
   }
 
   eventTypeFor(action){
@@ -141,10 +141,10 @@ export class RealtimeMultiplayer {
     return "WORLD_UPDATE";
   }
 
-  publicDelta(state,action){
+  publicDelta(state,action,clientPlayerIdForDelta){
     if(action==="SET_SPEED"||action==="PAUSE"||action==="RESUME") return {clock:state.clock};
     if(action==="BUILD"||action==="RESEARCH"||action==="MOVE_UNIT") {
-      const player=state.players[state.rooms.hostPlayerId]||Object.values(state.players)[0];
+      const player=state.players[clientPlayerIdForDelta]||Object.values(state.players)[0];
       return {countries:player?{[player.countryCode]:state.countries[player.countryCode]}:{}};
     }
     return {events:state.events.slice(0,20),notifications:state.notifications.slice(0,20)};
