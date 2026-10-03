@@ -411,8 +411,8 @@ export function addPlayer(state,{playerId,name,countryCode,host=false}) {
     return state.players[playerId];
   }
   if(Object.keys(state.players).length>=state.rules.maxPlayers) throw new Error("Room is full");
-  const code=String(countryCode||"").toUpperCase();
-  if(!state.countries[code]) throw new Error("Unknown country");
+  const code=resolveRealtimeCountryCode(countryCode,state.countries);
+  if(!code || !state.countries[code]) throw new Error("Unknown country");
   if(Object.values(state.players).some(p=>p.countryCode===code)) throw new Error("Country already occupied");
   const player={id:playerId,name:String(name||"Player").slice(0,40),countryCode:code,connected:true,joinedAt:Date.now(),host:Boolean(host)};
   state.players[playerId]=player;
