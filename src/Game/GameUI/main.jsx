@@ -32,6 +32,7 @@ import {
   syncAiDebugContext,
 } from "../AI/providerConfig.js";
 import { FallbackSwitchNotice } from "./fallbackSwitchNotice.jsx";
+import { useRealtimeSession } from "./realtimeSession.js";
 
 // Whether anything in the Fallback list has what its provider needs, and the
 // top entry's provider for the start-of-game prompt's wording. Re-read whenever
@@ -206,6 +207,9 @@ const Main = ({
   setIsGlobeEnabled,
   setIsTerrainEnabled,
 }) => {
+  // The realtime socket belongs to the actual game shell, not the library menu.
+  // Multiplayer therefore uses this same map/HUD instance instead of mounting a second interface.
+  useRealtimeSession();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   // Which workspace section the menu opens on; null is the quick menu. Set by
   // the AI setup prompt's Configure button, cleared whenever the menu closes.
