@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { addPlayer, command, RealtimeRoomStore, sanitizeSnapshot, normalizePlayerId, resolveRealtimeCountryCode } from "./realtimeSimulation.js";
+import { addPlayer, buildRealtimeCountryDefinitions, command, RealtimeRoomStore, sanitizeSnapshot, normalizePlayerId, resolveRealtimeCountryCode } from "./realtimeSimulation.js";
 import { getGameDetails } from "./libraryStore.js";
 
 const addDays=(date,days)=>new Date(Date.parse(`${date}T00:00:00Z`)+Math.round(days)*86400000).toISOString().slice(0,10);
@@ -109,10 +109,12 @@ export class RealtimeMultiplayer {
     if(!gameId) throw new Error("A multiplayer room must be attached to an existing Open Historia game");
     const details=this.gameLoader(gameId);
     const gameData=details?.data?.game||{};
-    const state=this.store.create({mode:"multi",name:m.name||details?.game?.name||"Multiplayer",seed:Number(m.seed)||19200101,gameId,scenarioId:details?.game?.scenarioId||details?.scenario?.id||"",startDate:gameData.gameDate||gameData.startDate||"1920-01-01"});
-    const countries=Object.keys(state.countries);
-    const country=resolveRealtimeCountryCode(m.countryCode||gameData.country);
+    const world=details?.data?.world || {};
+    const countryDefinitions=buildRealtimeCountryDefinitions(world);
+    const requestedCountry=m.countryCode||gameData.country;
+    const country=resolveRealtimeCountryCode(requestedCountry, Object.fromEntries(countryDefinitions.map((entry)=>[entry.code,{code:entry.code,name:entry.name}])));
     if(!country) throw new Error("The active game has no playable country");
+    const state=this.store.create({mode:"multi",name:m.name||details?.game?.name||"Multiplayer",seed:Number(m.seed)||19200101,gameId,scenarioId:details?.game?.scenarioId||details?.scenario?.id||"",startDate:gameData.gameDate||gameData.startDate||"1920-01-01",world,countryDefinitions});
     addPlayer(state,{playerId,name:m.playerName,countryCode:country,host:true});
     this.attach(client,state.id,playerId);
     json(client.socket,{type:"ROOM_CREATED",roomId:state.id,playerId,countryCode:country,gameId,snapshot:sanitizeSnapshot(state)});
