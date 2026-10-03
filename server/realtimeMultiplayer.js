@@ -115,7 +115,7 @@ export class RealtimeMultiplayer {
     if(!country) throw new Error("The active game has no playable country");
     addPlayer(state,{playerId,name:m.playerName,countryCode:country,host:true});
     this.attach(client,state.id,playerId);
-    json(client.socket,{type:"ROOM_CREATED",roomId:state.id,playerId,countryCode:country,snapshot:sanitizeSnapshot(state)});
+    json(client.socket,{type:"ROOM_CREATED",roomId:state.id,playerId,countryCode:country,gameId,snapshot:sanitizeSnapshot(state)});
     this.broadcast(state.id,{type:"PLAYER_JOINED",player:state.players[playerId]});
   }
 
@@ -126,7 +126,7 @@ export class RealtimeMultiplayer {
     addPlayer(state,{playerId,name:m.playerName,countryCode:m.countryCode,host:false});
     this.attach(client,state.id,playerId);
     this.broadcast(state.id,{type:"PLAYER_JOINED",player:state.players[playerId]},client);
-    json(client.socket,{type:"ROOM_JOINED",roomId:state.id,playerId,snapshot:sanitizeSnapshot(state)});
+    json(client.socket,{type:"ROOM_JOINED",roomId:state.id,playerId,gameId:state.gameId,scenarioId:state.scenarioId,snapshot:sanitizeSnapshot(state)});
   }
 
   attach(client,roomId,playerId){
