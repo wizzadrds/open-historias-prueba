@@ -51,6 +51,7 @@ import { useRuntimeState } from "../../runtime/useRuntimeState.js";
 import { MAP_SETTING_KEYS, getMapSettingDefaultOn, useMapSetting } from "../../runtime/mapSettings.js";
 import { formatGameDateReadable, isGameDate, normalizeGameDate } from "../../runtime/gameDates.js";
 import { jumpDayStep, jumpTargetDate } from "../../runtime/jumpDates.js";
+import { useRealtimeSessionState } from "./realtimeSession.js";
 
 dayjs.extend(advancedFormat);
 
@@ -2069,6 +2070,7 @@ const DateWidget = ({
     const gameData = useRuntimeState("game");
     const events = useRuntimeState("events");
     const worldState = useRuntimeState("world");
+    const realtime = useRealtimeSessionState();
     const setGameData = (game) => primeRuntimeValue("game", game);
     const setEvents = (next) => primeRuntimeValue("events", next);
     const setWorldState = (world) => primeRuntimeValue("world", world);
@@ -2819,7 +2821,8 @@ const DateWidget = ({
             ],
         };
     };
-    const rawGameDate = gameData?.gameDate || gameData?.startDate || "";
+    const realtimeActive = realtime.status === "in-game" && Boolean(realtime.clock?.date);
+    const rawGameDate = realtimeActive ? realtime.clock.date : (gameData?.gameDate || gameData?.startDate || "");
     // Any game date, BC included ("March 1st, 218 BC"); prose dates show verbatim.
     const hasValidGameDate = isGameDate(rawGameDate);
     // A phone's widget is narrow (the country sits over the date there), so
