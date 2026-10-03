@@ -3112,48 +3112,8 @@ const LibraryTopBar = () => {
       : { icon: "⬆", label: "Import game", run: () => importGameInputRef.current?.click() },
   ];
 
-  const realtimeStatus = realtime.error && realtime.status === "error" ? (
-    <div style={{
-      position: "fixed",
-      right: "0.75rem",
-      top: `calc(0.75rem + ${SAFE_TOP})`,
-      zIndex: 10001,
-      maxWidth: "min(28rem, calc(100vw - 1.5rem))",
-      padding: "0.7rem 0.85rem",
-      borderRadius: "12px",
-      background: "rgba(30,18,20,0.94)",
-      border: "1px solid rgba(239,68,68,0.35)",
-      color: "#fecaca",
-      fontSize: "0.78rem",
-      lineHeight: 1.4,
-      boxShadow: "0 12px 30px rgba(0,0,0,0.3)",
-    }}>
-      <strong style={{ display: "block", marginBottom: "0.2rem", color: "#fff" }}>Multijugador</strong>
-      {realtime.error}
-    </div>
-  ) : realtime.status === "in-game" ? (
-    <div style={{
-      position: "fixed",
-      right: "0.75rem",
-      top: `calc(0.75rem + ${SAFE_TOP})`,
-      zIndex: 10001,
-      padding: "0.34rem 0.62rem",
-      borderRadius: "999px",
-      background: "rgba(15,23,30,0.78)",
-      border: "1px solid rgba(43,193,243,0.3)",
-      color: "rgba(235,247,252,0.92)",
-      fontSize: "0.68rem",
-      fontWeight: 700,
-      letterSpacing: "0.05em",
-      backdropFilter: "blur(10px)",
-    }}>
-      ONLINE · {realtime.clock?.date || activeGame?.currentDate || ""}
-    </div>
-  ) : null;
-
   return (
     <>
-      {realtimeStatus}
       {/* In-game the full-width top bar is gone — the map gets the space. What
           remains is a compact floating cluster beside the ⋮ settings button: a
           small sleek pill with the session summary, plus Exit Game.
