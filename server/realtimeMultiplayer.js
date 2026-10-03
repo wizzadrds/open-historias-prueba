@@ -45,6 +45,12 @@ export class RealtimeMultiplayer {
 
   upgrade(req,socket){
     try{
+      const origin=req.headers.origin;
+      const host=String(req.headers.host||"");
+      if(origin && origin!=="null"){
+        const proto=String(req.headers["x-forwarded-proto"]||"http").split(",")[0].trim();
+        if(origin!==proto+"://"+host) throw new Error("WebSocket origin rejected");
+      }
       const key=req.headers["sec-websocket-key"];
       if(!key) throw new Error("Missing websocket key");
       const accept=crypto.createHash("sha1").update(key+"258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest("base64");
