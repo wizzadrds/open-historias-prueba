@@ -1,0 +1,640 @@
+/*! Open Historia — portions (mobile HUD wiring + advisor/forces launchers) © 2026 Nicholas Krol, AGPL-3.0-or-later (see LICENSE). */
+import React, { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { GenerationRatingToast } from "./generationRatingToast.jsx";
+import { SettingsButton, SettingsMenu } from "./settings";
+import { Presence } from "./presence.jsx";
+import { LibraryTopBar, TOP_BAR_OFFSET, openLibraryTab, useMainMenuOpen } from "./libraryBar";
+import { ApiSetupPrompt } from "./apiSetupPrompt.jsx";
+import { GameLoadingScreen, useGameLoading } from "./gameLoadingScreen.jsx";
+import { useLibraryState } from "../../runtime/library.js";
+import { presenceFor, useDiscordPresence } from "../../runtime/discordPresence.js";
+import { DISCORD_URL, GITHUB_URL, REDDIT_URL } from "../../runtime/communityLinks.js";
+import { useCountryDisplayName } from "../../runtime/polityNames.js";
+import { DateWidget } from "./time";
+import { Other } from "./other";
+import { Toolbar } from "./chat";
+import { Search } from "./search";
+import { ForcesPanel } from "./forces";
+import { ADVISOR_SLIDE } from "./advisorSlide.js";
+import { useIsMobile } from "../../runtime/useIsMobile.js";
+import { useBackToClose } from "../../runtime/backToClose.js";
+import { MAP_CARD_OPENED, SAFE_BOTTOM, SAFE_RIGHT } from "../../runtime/mobileUi.js";
+import { dismissRegionPopup } from "../Selection/Regions.jsx";
+import { dismissUnitPopup } from "../Selection/Units.jsx";
+import { dismissFeaturePopup } from "../Selection/Features.jsx";
+import { openCountryPanel } from "../Selection/CountryPanel.jsx";
+import { logDebugEvent, logSettingChange } from "../../runtime/debugLog.js";
+import {
+  describeProviderSetupNeed,
+  getProviderMeta,
+  getResolvedFallbackList,
+  isFallbackListConfigured,
+  syncAiDebugContext,
+} from "../AI/providerConfig.js";
+import { FallbackSwitchNotice } from "./fallbackSwitchNotice.jsx";
+
+// Whether anything in the Fallback list has what its provider needs, and the
+// top entry's provider for the start-of-game prompt's wording. Re-read whenever
+// the list or a Connection changes (providerConfig.js announces it).
+const readAiSetup = () => {
+  const [top] = getResolvedFallbackList();
+  return { ready: isFallbackListConfigured(), provider: top?.provider ?? "gemini" };
+};
+
+// The advisor drawer is user-resizable — drag its left edge (see advisor.jsx).
+// Width is kept in px so the drag maps 1:1 to the pointer, persisted in
+// localStorage, and clamped to a readable min and a max that keeps the HUD
+// in view.
+const ADVISOR_WIDTH_VAR = "--oh-advisor-width";
+const ADVISOR_MIN_WIDTH = 280;
+const ADVISOR_DEFAULT_WIDTH = 320; // 20rem, the old fixed width
+// The drawer may cover the map but not the HUD on its left. The tightest fit is
+// the top edge: the 18rem date widget moves left with the drawer and must stop
+// short of the 4rem game-menu button at 0.5rem. 0.5 + 4 + 0.5 gap + 18 + 0.5 =
+// 23.5rem, which also clears the bottom-left toolbar and search button.
+const ADVISOR_LEFT_CLEARANCE_REM = 23.5;
+const clampAdvisorWidth = (px) => {
+  const viewport = typeof window !== "undefined" ? window.innerWidth : 1280;
+  const rem = typeof document !== "undefined"
+    ? parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+    : 16;
+  // A window too narrow to leave that room (a phone) still gets the default width.
+  const max = Math.max(
+    viewport - ADVISOR_LEFT_CLEARANCE_REM * rem,
+    Math.min(ADVISOR_DEFAULT_WIDTH, viewport - 16),
+  );
+  return Math.round(Math.min(Math.max(px, Math.min(ADVISOR_MIN_WIDTH, max)), max));
+};
+const readAdvisorWidth = () => {
+  try {
+    const saved = Number(localStorage.getItem("oh-advisor-width"));
+    if (Number.isFinite(saved) && saved > 0) return clampAdvisorWidth(saved);
+  } catch { /* private-mode storage — fall through to default */ }
+  return clampAdvisorWidth(ADVISOR_DEFAULT_WIDTH);
+};
+const baseStyle = {
+  position: "fixed",
+  backgroundColor: "var(--oh-hud-bg)",
+  backdropFilter: "var(--oh-hud-blur)",
+  zIndex: 9999,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  color: "white",
+  fontFamily: "sans-serif",
+  borderRadius: "14px",
+  border: "1px solid var(--oh-hud-border)",
+  boxShadow: "var(--oh-hud-shadow-soft)",
+};
+
+const LazyAdvisorPanel = lazy(() =>
+  import("./advisor").then((module) => ({ default: module.AdvisorPanel })),
+);
+const LazyCheatsPanel = lazy(() =>
+  import("./cheats").then((module) => ({ default: module.CheatsPanel })),
+);
+// The AI debug console (telemetry review) is a lazy chunk like the cheats
+// panel: most sessions never open it.
+const LazyDebugConsole = lazy(() =>
+  import("./debugConsole.jsx").then((module) => ({ default: module.DebugConsole })),
+);
+// Interactive events (interactive.jsx): nothing of them loads until the player takes one up.
+const LazyInteractivePanel = lazy(() =>
+  import("./interactive.jsx").then((module) => ({ default: module.InteractivePanel })),
+);
+
+const checkWebGL = () => {
+  try {
+    const canvas = document.createElement("canvas");
+    return !!(
+      window.WebGLRenderingContext &&
+      (canvas.getContext("webgl") || canvas.getContext("experimental-webgl"))
+    );
+  } catch {
+    return false;
+  }
+};
+
+const WebGLWarningPopup = () => (
+  <div
+    style={{
+      position: "fixed",
+      inset: 0,
+      backgroundColor: "rgba(0, 0, 0, 0.7)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      zIndex: 9999,
+    }}
+  >
+    <div
+      style={{
+        backgroundColor: "#1a1a1e",
+        border: "1px solid #e94560",
+        borderRadius: "12px",
+        padding: "2rem",
+        maxWidth: "420px",
+        width: "90%",
+        color: "#eaeaea",
+        boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+        textAlign: "center",
+      }}
+    >
+      <div
+        style={{
+          fontSize: "3rem",
+          marginBottom: "0.75rem",
+          color: "#e94560",
+          display: "flex",
+          justifyContent: "center",
+        }}
+      >
+        ⚠️
+      </div>
+      <h2 style={{ margin: "0 0 0.75rem", fontSize: "1.3rem", color: "#e94560" }}>
+        WebGL Not Available
+      </h2>
+      <p style={{ margin: "0 0 0.5rem", lineHeight: 1.6, color: "#ccc", fontSize: "0.95rem" }}>
+        This application requires <strong style={{ color: "#eaeaea" }}>WebGL</strong> to render
+        the map, but it doesn't appear to be supported or enabled in your browser.
+      </p>
+      <p style={{ margin: "0 0 1.5rem", lineHeight: 1.6, color: "#999", fontSize: "0.85rem" }}>
+        Try enabling hardware acceleration in your browser settings, updating your graphics
+        drivers, or switching to a WebGL-supported browser such as Chrome or Firefox.
+      </p>
+    </div>
+  </div>
+);
+
+// Continuance's advisor glyph, drawn like the other HUD icons.
+const AdvisorDockIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z" />
+    <path d="M4.5 21c.8-4.2 3.3-6.3 7.5-6.3s6.7 2.1 7.5 6.3" />
+  </svg>
+);
+
+const AdvisorButton = ({ isAdvisorOpen, dockStyle, onToggle }) => (
+  <button
+    type="button"
+    title="Advisor"
+    aria-label="Advisor"
+    onClick={onToggle}
+    style={{
+      ...baseStyle,
+      ...dockStyle,
+      bottom: `calc(0.5rem + ${SAFE_BOTTOM})`,
+      // Rides beside the advisor drawer, so a wide drawer carries it over the
+      // Actions/Projects/chat panels (9998); an open panel stays on top.
+      zIndex: 9997,
+      height: "4rem", width: "4rem",
+      cursor: "pointer", fontSize: "1.5rem",
+      background: isAdvisorOpen
+        ? "linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.05))"
+        : "linear-gradient(180deg, rgba(53,53,58,0.58), rgba(17,17,19,0.48))",
+      transition: `${dockStyle.transition}, background 0.15s ease`,
+    }}
+  >
+    <AdvisorDockIcon />
+  </button>
+);
+
+const Main = ({
+  mapRef,
+  isGlobeEnabled,
+  isTerrainEnabled,
+  setIsGlobeEnabled,
+  setIsTerrainEnabled,
+}) => {
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  // Which workspace section the menu opens on; null is the quick menu. Set by
+  // the AI setup prompt's Configure button, cleared whenever the menu closes.
+  const [settingsInitialSection, setSettingsInitialSection] = useState(null);
+  const [isCheatsOpen, setIsCheatsOpen] = useState(false);
+  const [shouldLoadCheats, setShouldLoadCheats] = useState(false);
+  const [isDebugConsoleOpen, setIsDebugConsoleOpen] = useState(false);
+  const [shouldLoadDebugConsole, setShouldLoadDebugConsole] = useState(false);
+  const [isInteractiveOpen, setIsInteractiveOpen] = useState(false);
+  const [isAdvisorOpen, setIsAdvisorOpen] = useState(false);
+  const [advisorWidth, setAdvisorWidth] = useState(readAdvisorWidth);
+  // A starter message queued for the advisor's input box — set when something
+  // OUTSIDE the advisor panel (the Actions panel's "Help brainstorm actions"
+  // button) opens it wanting to prime the conversation, rather than opening it
+  // blank. Consumed (cleared) once AdvisorPanel has placed it in its input.
+  const [pendingAdvisorPrompt, setPendingAdvisorPrompt] = useState("");
+  const [isForcesOpen, setIsForcesOpen] = useState(false);
+  const [activeBottomPanel, setActiveBottomPanel] = useState(null);
+  const [shouldLoadAdvisor, setShouldLoadAdvisor] = useState(false);
+  const [isFullscreenEnabled, setIsFullscreenEnabled] = useState(false);
+  const [showWebGLWarning, setShowWebGLWarning] = useState(false);
+
+  const [aiSetup, setAiSetup] = useState(readAiSetup);
+  const { activeGame, games, loaded, runtimeScenario } = useLibraryState();
+  // The game menu names the campaign the way the library does.
+  const activeCountryName = useCountryDisplayName(activeGame?.country || "");
+  // No games -> nothing to simulate (the main menu covers the empty world).
+  const hasNoGames = loaded && (games?.length ?? 0) === 0;
+
+  // Starting a game with nothing to call the AI with: a prompt, once per game
+  // per session, offering the AI settings. It goes away the moment a key is
+  // typed into the settings, because every edit announces itself.
+  const mainMenuOpen = useMainMenuOpen();
+  // The screen a game opens under, until the map has drawn it (this UI is
+  // remounted per game, so it starts over with every game opened).
+  const gameLoading = useGameLoading();
+  const showGameLoading = gameLoading.active && Boolean(activeGame?.id);
+  // Discord's "Playing Open Historia", with who, where and when under it
+  // (runtime/discordPresence.js; the desktop app and the local server only).
+  useDiscordPresence(presenceFor({
+    activeGame,
+    playerName: activeCountryName || activeGame?.country || "",
+    scenarioName: runtimeScenario?.name || "",
+    inMenu: mainMenuOpen || hasNoGames,
+  }));
+  const providerReady = aiSetup.ready;
+  const [apiPromptAnsweredFor, setApiPromptAnsweredFor] = useState(() => {
+    try { return sessionStorage.getItem("oh:api-setup-answered") || ""; } catch { return ""; }
+  });
+  const answerApiPrompt = () => {
+    const id = String(activeGame?.id || "");
+    setApiPromptAnsweredFor(id);
+    try { sessionStorage.setItem("oh:api-setup-answered", id); } catch { /* the prompt just shows again next time */ }
+  };
+  const showApiPrompt = loaded && Boolean(activeGame?.id) && !mainMenuOpen && !providerReady
+    && apiPromptAnsweredFor !== String(activeGame?.id) && !isSettingsOpen && !showGameLoading;
+
+  useEffect(() => {
+    if (!checkWebGL()) setShowWebGLWarning(true);
+  }, []);
+
+  // Where the player was looking, in detailed mode only.
+  //
+  // One effect over every panel flag rather than a call inside each handler:
+  // these panels are opened from a dozen places (the toolbar, the advisor's own
+  // buttons, a keyboard shortcut), and a per-handler call would miss most of
+  // them the day it was written. The timeline's own panels log themselves in
+  // time.jsx, which owns them.
+  useEffect(() => {
+    const open = [
+      activeBottomPanel && `bottom:${activeBottomPanel}`,
+      isSettingsOpen && "settings",
+      isCheatsOpen && "cheats",
+      isAdvisorOpen && "advisor",
+      isForcesOpen && "forces",
+    ].filter(Boolean);
+    logDebugEvent("ui", `Open panels: ${open.length ? open.join(", ") : "(none)"}`, undefined, { verbose: true });
+  }, [activeBottomPanel, isSettingsOpen, isCheatsOpen, isAdvisorOpen, isForcesOpen]);
+
+  // Idle diplomacy drip: each real-world minute the game is open (and has a
+  // running game), there is a small chance a polity messages the player's
+  // inbox unprompted. Everything that could break it is guarded inside
+  // maybeSendIdleDiplomacy — it skips entirely while a time skip, game-master
+  // command, or interactive event stage is in flight, never overlaps itself, and stays
+  // silent on any failure. Hidden tabs don't roll the dice.
+  useEffect(() => {
+    if (hasNoGames) return undefined;
+    const iv = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      import("../AI/gameplay.js")
+        .then(({ maybeSendIdleDiplomacy }) => maybeSendIdleDiplomacy())
+        .catch(() => {});
+    }, 60000);
+    return () => clearInterval(iv);
+  }, [hasNoGames]);
+
+  // Spy reports, on the same rhythm and with the same guards: a roll each
+  // minute the tab is visible, at odds that work out to roughly one report
+  // every twenty minutes per deployed agent. Agents also report after every
+  // time skip (refreshSpyIntercepts, in the jump itself); this is what makes
+  // them tick while the player is simply playing, and it is why there is no
+  // Gather button — an agent is a trickle of intelligence, not a thing to farm.
+  useEffect(() => {
+    if (hasNoGames) return undefined;
+    const iv = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      import("../AI/gameplay.js")
+        .then(({ maybeGatherIntelligence }) => maybeGatherIntelligence())
+        .catch(() => {});
+    }, 60000);
+    return () => clearInterval(iv);
+  }, [hasNoGames]);
+
+  useEffect(() => {
+    if (isAdvisorOpen) setShouldLoadAdvisor(true);
+  }, [isAdvisorOpen]);
+
+  useEffect(() => {
+    localStorage.setItem("Fullscreen", JSON.stringify(isFullscreenEnabled));
+  }, [isFullscreenEnabled]);
+
+  // The report header names the top of the Fallback list from the moment the
+  // game loads; every later change to the list keeps it in step.
+  useEffect(() => {
+    syncAiDebugContext();
+    const refresh = () => setAiSetup(readAiSetup());
+    window.addEventListener("ai:fallback-changed", refresh);
+    return () => window.removeEventListener("ai:fallback-changed", refresh);
+  }, []);
+
+  const toggleFullscreen = (shouldBeFull) => {
+    // Mobile Safari (iOS/iPad) exposes the Fullscreen API webkit-prefixed, and
+    // iPhone Safari doesn't support element fullscreen at all — so probe for the
+    // right methods and never call an undefined one (which threw before, so the
+    // button silently failed on mobile).
+    const el = document.documentElement;
+    const fsElement = document.fullscreenElement || document.webkitFullscreenElement;
+    const request = el.requestFullscreen || el.webkitRequestFullscreen;
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    try {
+      if (shouldBeFull) {
+        if (!fsElement && request) {
+          const result = request.call(el);
+          if (result && typeof result.catch === "function") {
+            result.catch((error) => console.error("Error with fullscreen", error));
+          }
+        }
+      } else if (fsElement && exit) {
+        exit.call(document);
+      }
+    } catch (error) {
+      console.error("Error with fullscreen", error);
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () =>
+      setIsFullscreenEnabled(!!(document.fullscreenElement || document.webkitFullscreenElement));
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
+    };
+  }, []);
+
+  const openAdvisor = useCallback((seedPrompt) => {
+    setIsAdvisorOpen(true);
+    if (typeof seedPrompt === "string" && seedPrompt) setPendingAdvisorPrompt(seedPrompt);
+  }, []);
+
+  // The drawer's width and the offset of the HUD beside it both read one CSS
+  // variable, so they are always laid out from the same number in the same
+  // frame. React state holds the width at rest; a drag writes the variable
+  // directly and commits to state when it ends, so no pointermove re-renders
+  // the game UI.
+  useLayoutEffect(() => {
+    document.documentElement.style.setProperty(ADVISOR_WIDTH_VAR, `${advisorWidth}px`);
+  }, [advisorWidth]);
+
+  // The width the current drag has reached, committed when it ends.
+  const draggedAdvisorWidthRef = useRef(null);
+
+  // Called on every pointermove while the user drags the advisor's edge.
+  const handleAdvisorResize = useCallback((px) => {
+    const w = clampAdvisorWidth(px);
+    draggedAdvisorWidthRef.current = w;
+    document.documentElement.style.setProperty(ADVISOR_WIDTH_VAR, `${w}px`);
+  }, []);
+
+  // Committed and saved once, when the drag ends. The variable already holds
+  // it, so nothing moves on release.
+  const handleAdvisorResizeEnd = useCallback(() => {
+    const w = draggedAdvisorWidthRef.current;
+    draggedAdvisorWidthRef.current = null;
+    if (w === null) return;
+    setAdvisorWidth(w);
+    try { localStorage.setItem("oh-advisor-width", String(w)); } catch { /* ignore */ }
+  }, []);
+
+  // Keep the saved width valid if the window shrinks below it.
+  useEffect(() => {
+    const onResize = () => setAdvisorWidth((w) => clampAdvisorWidth(w));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const advisorCssWidth = `var(${ADVISOR_WIDTH_VAR}, ${advisorWidth}px)`;
+  // Where the HUD beside the drawer (date widget, flag, advisor button) sits.
+  // It is always placed at the drawer's edge, and pushed back to the screen
+  // edge while the drawer is shut by the same transform the drawer uses: the
+  // same distance (the drawer's width), duration and easing, started in the
+  // same frame and run by the compositor, so opening and closing move them as
+  // one. A drag changes only the width, which `right` follows with no
+  // transition at all. (Easing `right` instead made the HUD cover less
+  // distance than the drawer in the same time, on the busy main thread.)
+  //
+  // Not on a phone. There the advisor is the whole screen (advisor.jsx), so
+  // nothing rides beside it and the HUD stays at the edge. A phone-wide drawer
+  // used to carry the advisor button off the left of the screen, leaving the
+  // drawer's own ✕ as the only way back.
+  const isMobile = useIsMobile();
+  // (Either way it keeps clear of a notch or rounded corner on the right, like
+  // the drawer; the inset is 0 on a desktop.)
+  const advisorDockStyle = useMemo(() => (isMobile
+    ? { right: `calc(0.5rem + ${SAFE_RIGHT})`, transform: "none", transition: `transform ${ADVISOR_SLIDE}` }
+    : {
+      right: `calc(${advisorCssWidth} + 0.5rem + ${SAFE_RIGHT})`,
+      transform: isAdvisorOpen ? "none" : `translateX(${advisorCssWidth})`,
+      transition: `transform ${ADVISOR_SLIDE}`,
+    }), [advisorCssWidth, isAdvisorOpen, isMobile]);
+  const toggleBottomPanel = useCallback((panelName) => {
+    setActiveBottomPanel((currentPanel) => (
+      currentPanel === panelName ? null : panelName
+    ));
+  }, []);
+
+  // On a phone, Back closes the panel on top instead of leaving the game
+  // (runtime/backToClose.js; with a mouse nothing changes).
+  useBackToClose(Boolean(activeBottomPanel), () => setActiveBottomPanel(null));
+  useBackToClose(isAdvisorOpen, () => setIsAdvisorOpen(false));
+  useBackToClose(isForcesOpen, () => setIsForcesOpen(false));
+  useBackToClose(isCheatsOpen, () => setIsCheatsOpen(false));
+  useBackToClose(isDebugConsoleOpen, () => setIsDebugConsoleOpen(false));
+  useBackToClose(isInteractiveOpen, () => setIsInteractiveOpen(false));
+  useBackToClose(isSettingsOpen, () => {
+    setSettingsInitialSection(null);
+    setIsSettingsOpen(false);
+  });
+
+  // On a phone a map card and a bottom panel take turns (runtime/mobileUi.js):
+  // both sit at the bottom of the screen, and a card opened by a tap on the
+  // strip of map above an open panel came up underneath it, unseen. A panel
+  // opening also puts away the screen-sized sheets (the advisor, a country's
+  // panel): a diplomacy toast, which shows above them, opens the chat, and
+  // the chat came up underneath them.
+  useEffect(() => {
+    if (!isMobile || !activeBottomPanel) return undefined;
+    dismissRegionPopup();
+    dismissUnitPopup();
+    dismissFeaturePopup();
+    openCountryPanel(null);
+    setIsAdvisorOpen(false);
+    const onCardOpened = () => setActiveBottomPanel(null);
+    window.addEventListener(MAP_CARD_OPENED, onCardOpened);
+    return () => window.removeEventListener(MAP_CARD_OPENED, onCardOpened);
+  }, [isMobile, activeBottomPanel]);
+
+  // An interactive event opens from the card of the event a time skip offered,
+  // and from the time panel's note while one is offered or in progress (time.jsx
+  // dispatches this).
+  useEffect(() => {
+    const openInteractive = () => setIsInteractiveOpen(true);
+    window.addEventListener("oh:open-interactive-event", openInteractive);
+    return () => window.removeEventListener("oh:open-interactive-event", openInteractive);
+  }, []);
+
+  return (
+    <>
+      {showWebGLWarning && <WebGLWarningPopup />}
+      <LibraryTopBar />
+      <DateWidget
+        activePanel={activeBottomPanel}
+        mapRef={mapRef}
+        onSetPanel={setActiveBottomPanel}
+        onTogglePanel={toggleBottomPanel}
+        dockStyle={advisorDockStyle}
+        topOffset={TOP_BAR_OFFSET}
+      />
+      <Toolbar
+        onOpenAdvisor={openAdvisor}
+        activePanel={activeBottomPanel}
+        onTogglePanel={toggleBottomPanel}
+        mapRef={mapRef}
+      />
+      <Other dockStyle={advisorDockStyle} />
+      <Search mapRef={mapRef} />
+      <ForcesPanel
+        mapRef={mapRef}
+        topOffset={TOP_BAR_OFFSET}
+        open={isForcesOpen}
+        onToggle={() => setIsForcesOpen((v) => !v)}
+      />
+      <AdvisorButton
+        isAdvisorOpen={isAdvisorOpen}
+        dockStyle={advisorDockStyle}
+        onToggle={() => setIsAdvisorOpen(!isAdvisorOpen)}
+      />
+      <Suspense fallback={null}>
+        {shouldLoadAdvisor && (
+          <LazyAdvisorPanel
+            isAdvisorOpen={isAdvisorOpen}
+            mapRef={mapRef}
+            onClose={() => setIsAdvisorOpen(false)}
+            width={advisorCssWidth}
+            onResize={handleAdvisorResize}
+            onResizeEnd={handleAdvisorResizeEnd}
+            // A phone's advisor covers the screen, so it steps aside for the
+            // panel it opens.
+            onOpenActions={() => { setActiveBottomPanel("actions"); if (isMobile) setIsAdvisorOpen(false); }}
+            onOpenProjects={() => { setActiveBottomPanel("projects"); if (isMobile) setIsAdvisorOpen(false); }}
+            requestedPrompt={pendingAdvisorPrompt}
+            onConsumeRequest={() => setPendingAdvisorPrompt("")}
+          />
+        )}
+      </Suspense>
+      <Suspense fallback={null}>
+        <Presence open={isCheatsOpen}>
+          <LazyCheatsPanel open={isCheatsOpen} onClose={() => setIsCheatsOpen(false)} onOpenForces={() => { setIsCheatsOpen(false); setIsForcesOpen(true); }} />
+        </Presence>
+      </Suspense>
+      <Suspense fallback={null}>
+        <Presence open={isDebugConsoleOpen}>
+          <LazyDebugConsole open={isDebugConsoleOpen} onClose={() => setIsDebugConsoleOpen(false)} />
+        </Presence>
+      </Suspense>
+      <Suspense fallback={null}>
+        <Presence open={isInteractiveOpen}>
+          <LazyInteractivePanel
+            open={isInteractiveOpen}
+            onClose={() => setIsInteractiveOpen(false)}
+            onOpenTimeline={() => { setIsInteractiveOpen(false); setActiveBottomPanel("history"); }}
+          />
+        </Presence>
+      </Suspense>
+      <GenerationRatingToast />
+      <Presence open={showGameLoading} leaveMs={450}>
+        <GameLoadingScreen
+          gameName={activeGame?.name || ""}
+          scenarioName={runtimeScenario?.name || ""}
+          countryName={activeCountryName || activeGame?.country || ""}
+          // The game's own cover when it uploaded one, else its scenario's
+          // (the server already folds the two into the game's coverImageUrl).
+          coverUrl={activeGame?.coverImageUrl || runtimeScenario?.coverImageUrl || ""}
+          phase={gameLoading.phase}
+        />
+      </Presence>
+      <Presence open={showApiPrompt}>
+        <ApiSetupPrompt
+          providerLabel={getProviderMeta(aiSetup.provider)?.label || "the selected provider"}
+          missing={describeProviderSetupNeed(aiSetup.provider)}
+          onDismiss={answerApiPrompt}
+          onConfigure={() => {
+            answerApiPrompt();
+            setSettingsInitialSection("ai");
+            setIsSettingsOpen(true);
+          }}
+        />
+      </Presence>
+      <SettingsButton
+        topOffset={TOP_BAR_OFFSET}
+        hidden={isSettingsOpen}
+        onToggle={() => {
+          setSettingsInitialSection(null);
+          setIsSettingsOpen(!isSettingsOpen);
+        }}
+      />
+      <Presence open={isSettingsOpen} leaveMs={260}>
+        <SettingsMenu
+          discordUrl={DISCORD_URL}
+          redditUrl={REDDIT_URL}
+          githubUrl={GITHUB_URL}
+          reportBugUrl="https://github.com/Open-Historia/open-historia/issues/new"
+          context={{
+            gameName: activeGame?.name || "",
+            scenarioName: runtimeScenario?.name || "",
+            countryName: activeCountryName || activeGame?.country || "",
+            date: activeGame?.currentDate || "",
+          }}
+          initialSection={settingsInitialSection}
+          onClose={() => {
+            setSettingsInitialSection(null);
+            setIsSettingsOpen(false);
+          }}
+          onOpenGameManagement={() => openLibraryTab("games")}
+          onOpenEvents={() => setActiveBottomPanel("history")}
+          onOpenCheats={() => {
+            setShouldLoadCheats(true);
+            setIsCheatsOpen(true);
+            setIsSettingsOpen(false);
+          }}
+          onOpenDebugConsole={() => {
+            setShouldLoadDebugConsole(true);
+            setIsDebugConsoleOpen(true);
+            setIsSettingsOpen(false);
+          }}
+          topOffset={TOP_BAR_OFFSET}
+          isFullscreenEnabled={isFullscreenEnabled}
+          isGlobeEnabled={isGlobeEnabled}
+          isTerrainEnabled={isTerrainEnabled}
+          onToggleFullscreen={() => {
+            const newState = !isFullscreenEnabled;
+            setIsFullscreenEnabled(newState);
+            toggleFullscreen(newState);
+            logSettingChange("Fullscreen", newState);
+          }}
+          onToggleGlobe={() => {
+            setIsGlobeEnabled(!isGlobeEnabled);
+            logSettingChange("3D Globe", !isGlobeEnabled);
+          }}
+          onToggleTerrain={() => {
+            setIsTerrainEnabled(!isTerrainEnabled);
+            logSettingChange("3D Terrain", !isTerrainEnabled);
+          }}
+        />
+      </Presence>
+      <FallbackSwitchNotice />
+    </>
+  );
+};
+
+export default Main;

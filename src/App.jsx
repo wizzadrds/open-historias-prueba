@@ -1,0 +1,252 @@
+/*! Open Historia — portions (standalone map-editor mode) © 2026 Nicholas Krol, AGPL-3.0-or-later (see LICENSE). */
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import UI from "./Game/GameUI/main.jsx";
+
+// Lazy so OpenLayers is only fetched when the editor is actually opened.
+const MapEditor = lazy(() => import("./Editor/MapEditor.jsx"));
+// Lazy too: the map and MapLibre with it (over 1 MB) are fetched and parsed
+// while the startup screen is already up, not before it can draw, and the
+// editor never loads them. Nothing outside Game/Map imports maplibre-gl.
+const WorldMap = lazy(() => import("./Game/Map/World.jsx"));
+import StartupScreen from "./runtime/StartupScreen.jsx";
+import ErrorBoundary from "./runtime/ErrorBoundary.jsx";
+import AppUpdateBanner from "./runtime/AppUpdateBanner.jsx";
+import {
+  STARTUP_TIME_BUDGET_MS,
+  createInitialStartupState,
+  runStartupPreload,
+} from "./runtime/preload.js";
+import { ensureLibraryCatalog, useLibraryState } from "./runtime/library.js";
+import { announceMapRerender } from "./runtime/mapReadiness.js";
+import { prefetchGameplay } from "./Game/AI/gameplayLazy.js";
+
+const WorldShell = {
+  backgroundColor: "#000",
+  position: "fixed",
+  top: 0,
+  left: 0,
+  width: "100%",
+  height: "100%",
+  overflow: "hidden",
+  touchAction: "none",
+};
+
+const Vignette = {
+  position: "fixed",
+  inset: 0,
+  background: "radial-gradient(ellipse at center, transparent 70%, rgba(0,0,0,0.25) 100%)",
+  pointerEvents: "none",
+  zIndex: 10,
+};
+
+function GameApp() {
+  const mapRef = useRef(null);
+  const preloadStartedAtRef = useRef(null);
+  const preloadFinishedRef = useRef(false);
+  const worldIdleRef = useRef(false);
+  const [startupState, setStartupState] = useState(createInitialStartupState);
+  const [isReady, setIsReady] = useState(false);
+  const [hasFirstWorldIdle, setHasFirstWorldIdle] = useState(false);
+  const [isGlobeEnabled, setIsGlobeEnabled] = useState(() => {
+    const saved = localStorage.getItem("Globe");
+    return saved !== null ? JSON.parse(saved) : false;
+  });
+  const [isTerrainEnabled, setIsTerrainEnabled] = useState(() => {
+    const saved = localStorage.getItem("Terrain");
+    if (saved !== null) return JSON.parse(saved);
+    const isMobile = typeof window !== "undefined" && (
+      window.innerWidth <= 768 ||
+      /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+    ); // default to false for mobile, true for desktop
+    return !isMobile;
+  });
+  // Key the map/UI on the active GAME id, not the library token. The token also
+  // bumps on scenario/asset writes, so Apply & Play (which saves the scenario and
+  // uploads several assets before activating the new game) would otherwise remount
+  // the map ~8 times — the repeated flashing/reloading. The game id changes once,
+  // when the new game activates, so the map remounts exactly once.
+  const { activeGameId } = useLibraryState();
+
+  // Switching the globe on or off replaces the map instance (World.jsx keys it
+  // on the projection): a full redraw of the world, covered by the same opening
+  // screen a game gets. Announced BEFORE the state changes, so the new
+  // instance's readiness marks land after the reset rather than under it.
+  const globeRef = useRef(isGlobeEnabled);
+  useEffect(() => {
+    globeRef.current = isGlobeEnabled;
+  }, [isGlobeEnabled]);
+  const setGlobeEnabled = useCallback((next) => {
+    const value = typeof next === "function" ? next(globeRef.current) : Boolean(next);
+    if (value !== globeRef.current) announceMapRerender();
+    setIsGlobeEnabled(value);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("Globe", JSON.stringify(isGlobeEnabled));
+  }, [isGlobeEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem("Terrain", JSON.stringify(isTerrainEnabled));
+  }, [isTerrainEnabled]);
+
+  useEffect(() => {
+    preloadStartedAtRef.current = performance.now();
+    let isActive = true;
+    let frameId = 0;
+
+    const frame = () => {
+      if (!isActive) return;
+      const elapsedMs = Math.min(
+        STARTUP_TIME_BUDGET_MS,
+        Math.round(performance.now() - preloadStartedAtRef.current),
+      );
+
+      setStartupState((current) => {
+        if (!preloadStartedAtRef.current || current.elapsedMs === elapsedMs) {
+          return current;
+        }
+
+        return {
+          ...current,
+          elapsedMs,
+        };
+      });
+
+      if (elapsedMs >= STARTUP_TIME_BUDGET_MS) {
+        setIsReady(true);
+        return;
+      }
+
+      if (preloadFinishedRef.current && worldIdleRef.current) {
+        setIsReady(true);
+        return;
+      }
+
+      frameId = requestAnimationFrame(frame);
+    };
+
+    frameId = requestAnimationFrame(frame);
+
+    setStartupState((current) => ({
+      ...current,
+      stage: "Syncing games and scenarios",
+    }));
+
+    ensureLibraryCatalog()
+      .catch((error) => {
+        console.warn("Failed to load library catalog before startup preload:", error);
+      })
+      .finally(() => {
+        if (!isActive) return;
+
+        runStartupPreload({
+          onProgress: (nextState) => {
+            if (!isActive) return;
+            setStartupState((current) => ({ ...current, ...nextState }));
+          },
+        }).finally(() => {
+          preloadFinishedRef.current = true;
+          if (!isActive) return;
+
+          if (worldIdleRef.current) {
+            setIsReady(true);
+          } else {
+            setStartupState((current) => ({
+              ...current,
+              done: true,
+            }));
+          }
+        });
+      });
+
+    return () => {
+      isActive = false;
+      cancelAnimationFrame(frameId);
+    };
+  }, []);
+
+  const handleFirstWorldIdle = () => {
+    if (worldIdleRef.current) return;
+    worldIdleRef.current = true;
+    setHasFirstWorldIdle(true);
+
+    // Warm the AI chunk now that the map has settled, so the player's first turn
+    // pays for the turn and not for the download too.
+    prefetchGameplay();
+
+    if (preloadFinishedRef.current) {
+      setIsReady(true);
+    }
+  };
+
+  const startupOverlayState = useMemo(() => {
+    if (isReady || hasFirstWorldIdle || !startupState.done) {
+      return startupState;
+    }
+
+    return {
+      ...startupState,
+      progress: Math.max(startupState.progress, 97),
+      stage: "Finalizing first world render",
+    };
+  }, [hasFirstWorldIdle, isReady, startupState]);
+
+  return (
+    <>
+    <div style={WorldShell}>
+    <Suspense fallback={null}>
+    <WorldMap
+    key={`map-${activeGameId || "default"}`}
+    mapRef={mapRef}
+    projection={isGlobeEnabled ? "globe" : "mercator"}
+    terrainEnabled={isTerrainEnabled}
+    onInitialIdle={handleFirstWorldIdle}
+    />
+    </Suspense>
+    <div style={Vignette} />
+    </div>
+    {isReady && (
+      <UI
+      key={`ui-${activeGameId || "default"}`}
+      isGlobeEnabled={isGlobeEnabled}
+      isTerrainEnabled={isTerrainEnabled}
+      mapRef={mapRef}
+      setIsGlobeEnabled={setGlobeEnabled}
+      setIsTerrainEnabled={setIsTerrainEnabled}
+      />
+    )}
+    {!isReady && <StartupScreen {...startupOverlayState} />}
+    </>
+  );
+}
+
+// Standalone modes are isolated behind URL flags so the real game is untouched:
+//   ?editor=1  -> the OpenLayers map editor (author custom maps)
+// Flags are read once at render time, so hook order stays consistent.
+function App() {
+  const params =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search)
+      : new URLSearchParams();
+  if (params.has("editor")) {
+    return (
+      <Suspense fallback={<div style={{ position: "fixed", inset: 0, background: "#111113" }} />}>
+        <MapEditor />
+      </Suspense>
+    );
+  }
+  // Wrap the game view (not the editor route, which has its own Suspense fallback)
+  // so a render/lifecycle throw in the map, UI or panels shows a recoverable Reload
+  // screen instead of unmounting to a blank page. Wrapping <GameApp/> at this level
+  // (rather than inside GameApp's return) also catches GameApp's own render throws.
+  return (
+    <>
+      <AppUpdateBanner />
+      <ErrorBoundary>
+        <GameApp />
+      </ErrorBoundary>
+    </>
+  );
+}
+
+export default App;

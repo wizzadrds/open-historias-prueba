@@ -1,0 +1,522 @@
+/*! Open Historia — portions (scenario-map editor seeding) © 2026 Nicholas Krol, AGPL-3.0-or-later (see LICENSE). */
+import { useSyncExternalStore } from "react";
+import { announceGameOpening, setReadinessGame } from "./mapReadiness.js";
+import {
+  JSON_URLS,
+  readJson,
+  setCountryNameResolver,
+  setRuntimeAssetEndpoints,
+} from "./assets.js";
+import { logDebugEvent, setDebugLogContext } from "./debugLog.js";
+import { setActiveFeatures } from "./gameFeatures.js";
+import { enqueueContentStrings } from "./translator.js";
+
+const LIBRARY_API_ROOT = "/api/library";
+const SCENARIOS_API_ROOT = "/api/scenarios";
+const GAMES_API_ROOT = "/api/games";
+
+const INITIAL_LIBRARY_STATE = {
+  activeGame: null,
+  activeGameId: null,
+  baseSaves: [],
+  countryNames: {},
+  error: null,
+  games: [],
+  loaded: false,
+  loading: false,
+  runtimeScenario: null,
+  scenarios: [],
+  selectedScenario: null,
+  selectedScenarioId: null,
+  token: "",
+};
+
+let libraryState = INITIAL_LIBRARY_STATE;
+let libraryCatalogRequest = null;
+const listeners = new Set();
+
+const emitLibraryState = () => {
+  for (const listener of listeners) {
+    listener();
+  }
+};
+
+const normalizeLookupKey = (value) => String(value ?? "").trim().toUpperCase();
+
+const resolveCountryNameOverride = (overrides, name, code) => {
+  if (!overrides || typeof overrides !== "object") {
+    return name;
+  }
+
+  const codeKey = normalizeLookupKey(code);
+  if (codeKey && typeof overrides[codeKey] === "string" && overrides[codeKey].trim()) {
+    return overrides[codeKey].trim();
+  }
+
+  const exactName = String(name ?? "").trim();
+  if (exactName && typeof overrides[exactName] === "string" && overrides[exactName].trim()) {
+    return overrides[exactName].trim();
+  }
+
+  const normalizedName = normalizeLookupKey(name);
+  if (
+    normalizedName &&
+    typeof overrides[normalizedName] === "string" &&
+    overrides[normalizedName].trim()
+  ) {
+    return overrides[normalizedName].trim();
+  }
+
+  return name;
+};
+
+const syncLibraryRuntime = () => {
+  const token = libraryState.token ?? libraryState.activeGame?.cacheToken ?? "";
+  setRuntimeAssetEndpoints({ token });
+  // Before the UI re-renders for the new save, so the map's readiness marks
+  // (mapReadiness.js) are stamped with the game they belong to.
+  setReadinessGame(libraryState.activeGameId);
+  // The features this save plays with — its scenario's configuration under its
+  // own overrides — for the UI (useActiveFeatures) and the simulation
+  // (isActiveFeatureEnabled), without a library round trip.
+  setActiveFeatures(libraryState.runtimeScenario?.features, libraryState.activeGame?.features);
+  setCountryNameResolver((name, code) =>
+    resolveCountryNameOverride(libraryState.runtimeScenario?.countryNameOverrides, name, code),
+  );
+};
+
+const setLibraryState = (nextState) => {
+  libraryState = nextState;
+  syncLibraryRuntime();
+  emitLibraryState();
+};
+
+const parseApiResponse = async (response) => {
+  let payload = null;
+
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+
+  if (response.ok) {
+    return payload;
+  }
+
+  const message =
+    payload?.error ||
+    payload?.message ||
+    `Request failed with HTTP ${response.status}`;
+  throw new Error(message);
+};
+
+const requestJson = async (pathname, { body, method = "GET" } = {}) => {
+  const startedAt = Date.now();
+  const response = await fetch(pathname, {
+    body: body == null ? undefined : JSON.stringify(body),
+    headers: body == null ? undefined : { "Content-Type": "application/json" },
+    method,
+  });
+
+  try {
+    const parsed = await parseApiResponse(response);
+    // Detailed mode records the calls that WORKED too. A save that silently
+    // never fired, one that took nine seconds, an autosave running twice a
+    // second — none of those raise an error, and all of them are diagnosed from
+    // the shape of this stream rather than from any single entry. The request
+    // body stays out at both levels: it is a whole campaign.
+    // The duration only goes in when it is worth seeing. The game polls the
+    // active game and the actions queue every five seconds, so a per-call
+    // millisecond figure would make every poll a unique entry and defeat the
+    // repeat collapsing — hundreds of near-identical lines burning the size
+    // budget. Identical fast calls now fold into one `(×120)` line, and a call
+    // slow enough to matter breaks out of the fold by itself, which is exactly
+    // when you want to see it.
+    const elapsed = Date.now() - startedAt;
+    logDebugEvent("api", `${method} ${pathname} → ${response.status}`,
+      elapsed >= 1000 ? { slowMs: elapsed } : undefined,
+      { verbose: true });
+    return parsed;
+  } catch (error) {
+    // Every library call — load, save, activate, delete, every asset upload —
+    // funnels through here, so this one line puts "the save failed and here is
+    // what the server said" in the diagnostics log for all of them. Several
+    // callers swallow the throw or surface it only as a toast that is gone by
+    // the time a bug is reported.
+    //
+    // The path, not the body: a request body is a whole campaign and the log is
+    // meant to be pasteable.
+    logDebugEvent("api", `${method} ${pathname} failed`, error);
+    throw error;
+  }
+};
+
+const applyLibraryCatalog = (catalog) => {
+  const games = Array.isArray(catalog?.games) ? catalog.games : [];
+  const scenarios = Array.isArray(catalog?.scenarios) ? catalog.scenarios : [];
+  const activeGameId = catalog?.activeGameId ?? games[0]?.id ?? null;
+  const selectedScenarioId = catalog?.selectedScenarioId ?? scenarios[0]?.id ?? null;
+  const activeGame = games.find((entry) => entry.id === activeGameId) ?? null;
+  const selectedScenario = scenarios.find((entry) => entry.id === selectedScenarioId) ?? null;
+  const runtimeScenario =
+    scenarios.find((entry) => entry.id === catalog?.runtimeScenario?.id) ??
+    catalog?.runtimeScenario ??
+    (activeGame
+      ? scenarios.find((entry) => entry.id === activeGame.scenarioId) ?? null
+      : null);
+
+  // The report header's campaign block, refreshed wherever the catalog lands:
+  // creating, saving, activating and deleting a game all pass through here, so
+  // a log pasted after switching saves names the save it is actually about.
+  if (activeGameId !== libraryState.activeGameId) {
+    logDebugEvent(
+      "game",
+      activeGame ? `Active game switched to "${activeGame.name || activeGameId}".` : "No active game.",
+      activeGameId ? { gameId: activeGameId, scenarioId: activeGame?.scenarioId || "" } : undefined,
+    );
+  }
+  setDebugLogContext({
+    gameId: activeGameId || "",
+    gameName: activeGame?.name || "",
+    scenario: runtimeScenario?.name || activeGame?.scenarioId || "",
+  });
+
+  const activeGameChanged = activeGameId !== libraryState.activeGameId;
+
+  setLibraryState({
+    activeGame,
+    activeGameId,
+    baseSaves: Array.isArray(catalog?.baseSaves) ? catalog.baseSaves : [],
+    countryNames:
+      catalog?.countryNames && typeof catalog.countryNames === "object"
+        ? catalog.countryNames
+        : {},
+    error: null,
+    games,
+    loaded: true,
+    loading: false,
+    runtimeScenario,
+    scenarios,
+    selectedScenario,
+    selectedScenarioId,
+    token: catalog?.token ?? activeGame?.cacheToken ?? "",
+  });
+
+  // After setLibraryState, never before: syncLibraryRuntime() inside it is what
+  // repoints JSON_URLS.game at the newly active save.
+  if (activeGameChanged) {
+    // The map's world store (Map/useWorldState.js) bootstraps once and then
+    // follows same-tab writes; a switch to another save is neither, so without
+    // this it kept rendering the previous save's basemap, background and
+    // overrides. Dispatched after the endpoints were repointed, so a listener
+    // that re-reads world.json gets the new save's.
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("oh:active-game-changed", {
+        detail: { gameId: activeGameId },
+      }));
+    }
+  }
+
+  return libraryState;
+};
+
+
+export const getLibraryState = () => libraryState;
+
+export const subscribeToLibraryState = (listener) => {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+};
+
+export const useLibraryState = () =>
+  useSyncExternalStore(subscribeToLibraryState, getLibraryState, getLibraryState);
+
+export const refreshLibraryCatalog = async ({ force = false } = {}) => {
+  if (libraryCatalogRequest && !force) {
+    return libraryCatalogRequest;
+  }
+
+  setLibraryState({
+    ...libraryState,
+    error: null,
+    loading: true,
+  });
+
+  libraryCatalogRequest = requestJson(LIBRARY_API_ROOT)
+    .then((catalog) => applyLibraryCatalog(catalog))
+    .catch((error) => {
+      setLibraryState({
+        ...libraryState,
+        error: error.message,
+        loaded: true,
+        loading: false,
+      });
+      throw error;
+    })
+    .finally(() => {
+      libraryCatalogRequest = null;
+    });
+
+  return libraryCatalogRequest;
+};
+
+export const ensureLibraryCatalog = async () => {
+  if (libraryState.loaded) {
+    return libraryState;
+  }
+
+  return refreshLibraryCatalog();
+};
+
+export const loadScenarioDetails = async (scenarioId) =>
+  requestJson(`${SCENARIOS_API_ROOT}/${encodeURIComponent(scenarioId)}`);
+
+export const createScenario = async (payload) => {
+  const details = await requestJson(SCENARIOS_API_ROOT, {
+    body: payload,
+    method: "POST",
+  });
+  // Edited names/descriptions translate (and reach the server language pack)
+  // the moment they're saved, not when first rendered.
+  enqueueContentStrings(payload);
+  await refreshLibraryCatalog({ force: true });
+  return details;
+};
+
+export const saveScenario = async (scenarioId, payload) => {
+  const details = await requestJson(`${SCENARIOS_API_ROOT}/${encodeURIComponent(scenarioId)}`, {
+    body: payload,
+    method: "PUT",
+  });
+  enqueueContentStrings(payload);
+  await refreshLibraryCatalog({ force: true });
+  return details;
+};
+
+export const selectScenario = async (scenarioId) => {
+  const catalog = await requestJson(`${SCENARIOS_API_ROOT}/selected`, {
+    body: { scenarioId },
+    method: "PUT",
+  });
+  return applyLibraryCatalog(catalog);
+};
+
+export const removeScenario = async (scenarioId) => {
+  const catalog = await requestJson(`${SCENARIOS_API_ROOT}/${encodeURIComponent(scenarioId)}`, {
+    method: "DELETE",
+  });
+  return applyLibraryCatalog(catalog);
+};
+
+const toUploadBuffer = async (file) => {
+  if (file instanceof Blob) {
+    return file.arrayBuffer();
+  }
+
+  if (file instanceof ArrayBuffer) {
+    return file;
+  }
+
+  if (ArrayBuffer.isView(file)) {
+    return file.buffer;
+  }
+
+  return new TextEncoder().encode(String(file ?? "")).buffer;
+};
+
+// Fetch a scenario's JSON asset (regions/cities geojson, colors). Returns null
+// when the scenario has no such asset (404) instead of throwing — callers treat
+// a missing asset as "use the default".
+// `coarse` asks for the regions coarsened for a zoomed-out preview (the
+// country picker) instead of the full-resolution file: a few MB, not 221.
+export const downloadScenarioJsonAsset = async (scenarioId, assetKey, { coarse = false } = {}) => {
+  try {
+    const response = await fetch(
+      `${SCENARIOS_API_ROOT}/${encodeURIComponent(scenarioId)}/assets/${encodeURIComponent(assetKey)}${coarse ? "?coarse=1" : ""}`,
+    );
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+};
+
+export const uploadScenarioAsset = async (scenarioId, assetKey, file) => {
+  const response = await fetch(
+    `${SCENARIOS_API_ROOT}/${encodeURIComponent(scenarioId)}/assets/${encodeURIComponent(assetKey)}`,
+    {
+      body: await toUploadBuffer(file),
+      headers: {
+        "Content-Type": file?.type || "application/octet-stream",
+      },
+      method: "PUT",
+    },
+  );
+
+  const details = await parseApiResponse(response);
+  await refreshLibraryCatalog({ force: true });
+  return details;
+};
+
+export const clearScenarioAsset = async (scenarioId, assetKey) => {
+  const details = await requestJson(
+    `${SCENARIOS_API_ROOT}/${encodeURIComponent(scenarioId)}/assets/${encodeURIComponent(assetKey)}`,
+    {
+      method: "DELETE",
+    },
+  );
+  await refreshLibraryCatalog({ force: true });
+  return details;
+};
+
+export const uploadGameAsset = async (gameId, assetKey, file) => {
+  const response = await fetch(
+    `${GAMES_API_ROOT}/${encodeURIComponent(gameId)}/assets/${encodeURIComponent(assetKey)}`,
+    {
+      body: await toUploadBuffer(file),
+      headers: {
+        "Content-Type": file?.type || "application/octet-stream",
+      },
+      method: "PUT",
+    },
+  );
+
+  const details = await parseApiResponse(response);
+  await refreshLibraryCatalog({ force: true });
+  return details;
+};
+
+export const clearGameAsset = async (gameId, assetKey) => {
+  const details = await requestJson(
+    `${GAMES_API_ROOT}/${encodeURIComponent(gameId)}/assets/${encodeURIComponent(assetKey)}`,
+    {
+      method: "DELETE",
+    },
+  );
+  await refreshLibraryCatalog({ force: true });
+  return details;
+};
+
+// Always the whole scenario: geometry, cities, basemap, flags, colours, tags
+// and any custom tile archive. There is no light export.
+export const exportScenarioBundle = async (scenarioId) =>
+  requestJson(`${SCENARIOS_API_ROOT}/${encodeURIComponent(scenarioId)}/export`);
+
+export const importScenarioBundle = async (bundle) => {
+  const details = await requestJson(`${SCENARIOS_API_ROOT}/import`, {
+    body: bundle,
+    method: "POST",
+  });
+  await refreshLibraryCatalog({ force: true });
+  return details;
+};
+
+// Replace an existing scenario's content with a fresh bundle — the hub's
+// "Update" button. Keeps the local scenario id, so games that reference it
+// keep working.
+export const updateScenarioFromBundle = async (scenarioId, bundle) => {
+  const details = await requestJson(`${SCENARIOS_API_ROOT}/${encodeURIComponent(scenarioId)}/import`, {
+    body: bundle,
+    method: "PUT",
+  });
+  await refreshLibraryCatalog({ force: true });
+  return details;
+};
+
+// One Game as a portable record. The zip that carries it is assembled by the
+// caller (src/runtime/gameZip.js) so the same code runs on desktop and on the web build.
+export const exportGameBundle = async (gameId) =>
+  requestJson(`${GAMES_API_ROOT}/${encodeURIComponent(gameId)}/export`);
+
+export const importGameBundle = async (bundle) => {
+  const details = await requestJson(`${GAMES_API_ROOT}/import`, {
+    body: bundle,
+    method: "POST",
+  });
+  await refreshLibraryCatalog({ force: true });
+  return details;
+};
+
+// Restore points move as TEXT, never through requestJson, and that is the whole
+// point of them having their own endpoint. A full snapshots file is ~21 MB;
+// JSON.parse on it costs ~80 MB of heap, and requestJson would parse it coming
+// in and stringify it going back out — twice, for a payload this side only ever
+// moves from one place to another. Straight to and from the zip instead.
+export const readGameSnapshotsText = async (gameId) => {
+  const response = await fetch(
+    `${GAMES_API_ROOT}/${encodeURIComponent(gameId)}/snapshots`,
+    { cache: "no-store" },
+  );
+  if (!response.ok) throw new Error(`Could not read this game's restore points (HTTP ${response.status}).`);
+  return response.text();
+};
+
+export const writeGameSnapshotsText = async (gameId, snapshotsText) => {
+  const response = await fetch(
+    `${GAMES_API_ROOT}/${encodeURIComponent(gameId)}/snapshots`,
+    {
+      body: snapshotsText,
+      headers: { "Content-Type": "application/json" },
+      method: "PUT",
+    },
+  );
+  if (!response.ok) throw new Error(`Could not restore this game's restore points (HTTP ${response.status}).`);
+};
+
+export const loadGameDetails = async (gameId) =>
+  requestJson(`${GAMES_API_ROOT}/${encodeURIComponent(gameId)}`);
+
+export const createGame = async (payload) => {
+  announceGameOpening(payload?.scenarioId ?? payload?.id ?? "");
+  const details = await requestJson(GAMES_API_ROOT, {
+    body: payload,
+    method: "POST",
+  });
+  logDebugEvent("game", `New game created: "${payload?.name || details?.id || "untitled"}".`, {
+    scenarioId: payload?.scenarioId || "",
+    country: payload?.gamePatch?.country || payload?.country || "",
+    difficulty: payload?.gamePatch?.difficulty || payload?.difficulty || "",
+  });
+  // Card text edits translate (and reach the server language pack) right away.
+  enqueueContentStrings(payload);
+  await refreshLibraryCatalog({ force: true });
+  return details;
+};
+
+export const saveGame = async (gameId, payload) => {
+  const details = await requestJson(`${GAMES_API_ROOT}/${encodeURIComponent(gameId)}`, {
+    body: payload,
+    method: "PUT",
+  });
+  enqueueContentStrings(payload);
+  await refreshLibraryCatalog({ force: true });
+  return details;
+};
+
+export const activateGame = async (gameId) => {
+  // The loading screen comes up now, not when the new UI mounts a round trip
+  // later (GameUI/gameLoadingScreen.jsx).
+  announceGameOpening(gameId);
+  const catalog = await requestJson(`${GAMES_API_ROOT}/active`, {
+    body: { gameId },
+    method: "PUT",
+  });
+  return applyLibraryCatalog(catalog);
+};
+
+export const removeGame = async (gameId) => {
+  // Logged before the request, not after: "they deleted a save and then it
+  // broke" is the report this line exists for, and a delete that throws
+  // half-way is exactly the case where the after-the-fact line never runs.
+  logDebugEvent("game", "Deleting a save.", { gameId });
+  const catalog = await requestJson(`${GAMES_API_ROOT}/${encodeURIComponent(gameId)}`, {
+    method: "DELETE",
+  });
+  return applyLibraryCatalog(catalog);
+};
+
+export const resolveScenarioCountryName = (name, code) =>
+  resolveCountryNameOverride(libraryState.runtimeScenario?.countryNameOverrides, name, code);
+
+syncLibraryRuntime();

@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-H9EQ4JFZXZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-H9EQ4JFZXZ');
+  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#111113" />
+  <link rel="icon" type="image/jpeg" href="/logo.png" />
+  <title>Open Historia vs Pax Historia — The Free, Open-Source Alternative</title>
+  <link rel="canonical" href="https://openhistoria.com/pax-historia-alternative/" />
+  <meta name="description" content="How Open Historia compares to Pax Historia: both are AI-driven alternate-history sandboxes, but Open Historia is free, open source, runs on your own machine with your own AI, and has a built-in vector map editor. Also compared with Age of History 3 and other strategy games." />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Open Historia" />
+  <meta property="og:url" content="https://openhistoria.com/pax-historia-alternative/" />
+  <meta property="og:title" content="Open Historia vs Pax Historia — The Free, Open-Source Alternative" />
+  <meta property="og:description" content="Both are AI-driven alternate-history sandboxes. Open Historia is free, open source, runs on your own machine with your own AI, and has a built-in vector map editor." />
+  <meta property="og:image" content="https://raw.githubusercontent.com/Open-Historia/open-historia/main/public/loading_screen.jpg" />
+  <meta property="og:image:type" content="image/jpeg" />
+  <meta property="og:image:width" content="1280" />
+  <meta property="og:image:height" content="720" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Open Historia vs Pax Historia — The Free, Open-Source Alternative" />
+  <meta name="twitter:description" content="Both are AI-driven alternate-history sandboxes. Open Historia is free, open source, runs on your own machine with your own AI, and has a built-in vector map editor." />
+  <meta name="twitter:image" content="https://raw.githubusercontent.com/Open-Historia/open-historia/main/public/loading_screen.jpg" />
+
+  <link rel="stylesheet" href="/guides.css" />
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "Open Historia",
+        "item": "https://openhistoria.com/"
+      },
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "name": "Pax Historia Alternative",
+        "item": "https://openhistoria.com/pax-historia-alternative/"
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <div class="page">
+    <nav class="breadcrumbs" aria-label="Breadcrumb">
+      <a href="/">Open Historia</a> <span aria-hidden="true">/</span> Pax Historia Alternative
+    </nav>
+
+    <img class="logo" src="/logo.png" alt="Open Historia logo" width="64" height="64" />
+
+    <h1>Open Historia — The Free, Open-Source Pax Historia Alternative</h1>
+    <p class="tagline">Open Historia is a free, open-source AI grand strategy game built as a community alternative to Pax Historia. Same idea — lead a nation, act in plain language, let an AI simulate the world — but running on your own machine, with your own AI, under the AGPL-3.0 license. No purchase, no subscription, no metering.</p>
+
+    <h2>What the Two Games Share</h2>
+    <div class="card">
+      <p><strong>Pax Historia</strong> is a commercial alternate-history sandbox played in the browser, where an AI simulates how nations respond to the actions players type in natural language; players start diplomatic chats, jump forward in time, and publish custom maps and presets for others to play. Open Historia was started by fans of exactly that loop who wanted it to be:</p>
+      <ul>
+        <li><strong>Free, with no metering</strong> — no tokens, no subscription, no daily limit on how long you play. The only cost is whatever your AI provider charges, and a free Gemini key or a local model costs nothing.</li>
+        <li><strong>Open source</strong> — the full codebase is on GitHub under the AGPL-3.0 license, and contributions shape the game.</li>
+        <li><strong>Yours to run</strong> — a desktop app, an Android app, and a server you can host yourself. Saves stay on your device; there is no account and no central game server.</li>
+        <li><strong>Bring-your-own AI</strong> — Gemini, OpenAI, Anthropic, or a local model through Ollama or LM Studio, sent your key directly. Play offline with a local model.</li>
+        <li><strong>A real map editor</strong> — a full vector editor to draw regions, redraw borders, paint owners, and place cities, with a Scenario Hub to share the result.</li>
+      </ul>
+    </div>
+
+    <h2>Open Historia vs Pax Historia — Comparison</h2>
+    <table class="comparison-table">
+      <thead>
+        <tr>
+          <th>Aspect</th>
+          <th>Open Historia</th>
+          <th>Pax Historia</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Price</td>
+          <td><span class="check">Free, no limits on play time</span></td>
+          <td>Commercial; free play is metered, longer sessions are paid</td>
+        </tr>
+        <tr>
+          <td>Source code</td>
+          <td><span class="check">Open source on GitHub (AGPL-3.0)</span></td>
+          <td><span class="cross">Closed source</span></td>
+        </tr>
+        <tr>
+          <td>Where it runs</td>
+          <td><span class="check">On your machine: desktop app, Android app, self-hosted server; browser demo</span></td>
+          <td>Hosted service in the browser</td>
+        </tr>
+        <tr>
+          <td>The AI</td>
+          <td><span class="check">Your choice: Gemini, OpenAI, Anthropic, or a local model, with your own key</span></td>
+          <td>The developer's models, included in the service</td>
+        </tr>
+        <tr>
+          <td>Plain-language actions and AI diplomacy chat</td>
+          <td><span class="check">Yes</span></td>
+          <td>Yes</td>
+        </tr>
+        <tr>
+          <td>Time skips with AI-written events</td>
+          <td><span class="check">6 hours to 1 year per skip</span></td>
+          <td>Yes</td>
+        </tr>
+        <tr>
+          <td>AI advisor and intelligence briefings</td>
+          <td><span class="check">Built in</span></td>
+          <td>See their site</td>
+        </tr>
+        <tr>
+          <td>Spies, troops and fronts on the map</td>
+          <td><span class="check">Built in</span></td>
+          <td>See their site</td>
+        </tr>
+        <tr>
+          <td>Map editor</td>
+          <td><span class="check">Full vector editor: draw, split, merge, paint owners, place cities</span></td>
+          <td>Custom maps and presets through its own tools</td>
+        </tr>
+        <tr>
+          <td>Sharing custom worlds</td>
+          <td><span class="check">Scenario Hub: browse, import, publish</span></td>
+          <td>Community presets on the service</td>
+        </tr>
+        <tr>
+          <td>Your saves and data</td>
+          <td><span class="check">On your device; no account required</span></td>
+          <td>On the developer's servers, tied to your account</td>
+        </tr>
+        <tr>
+          <td>Offline play</td>
+          <td><span class="check">Yes, with a local model</span></td>
+          <td><span class="cross">Requires their service</span></td>
+        </tr>
+        <tr>
+          <td>Platforms</td>
+          <td><span class="check">Windows, macOS, Linux, Android, browser demo</span></td>
+          <td>Browser</td>
+        </tr>
+        <tr>
+          <td>Modding</td>
+          <td><span class="check">Full source access, editable prompts, map editor, scenario system</span></td>
+          <td>Within the service's tools</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>Pax Historia's features and terms are the developer's to change; check <a href="https://www.paxhistoria.co/" target="_blank" rel="noopener">their site</a> for what is current. Open Historia is an independent project and is not affiliated with it.</p>
+
+    <h2>Also a Free Alternative to Age of History 3</h2>
+    <div class="card">
+      <p>Open Historia is also a <span class="highlight">free alternative to Age of History 3</span>. Like Age of History, it features territory-based nation management, troop deployment, and historical scenarios. What it adds:</p>
+      <ul>
+        <li>AI-driven simulation: you act in plain language and the AI writes what happens next, instead of fixed mechanics</li>
+        <li>Natural-language negotiation with every nation's leader</li>
+        <li>An AI advisor for situation briefings and strategic advice</li>
+        <li>A community Scenario Hub for sharing and discovering player-made worlds</li>
+        <li>Full vector map editing built directly into the game</li>
+      </ul>
+      <p>If you are looking for <strong>games like Age of History 3 but free</strong>, Open Historia is the open-source option.</p>
+    </div>
+
+    <h2>Open Historia vs Other Grand Strategy Games</h2>
+    <div class="card">
+      <p>While Open Historia is the closest direct alternative to Pax Historia, it also shares elements with other grand strategy and 4X games:</p>
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th>Game</th>
+            <th>Similarity</th>
+            <th>Key Difference</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Crusader Kings 3</td>
+            <td>Diplomacy, emergent stories</td>
+            <td>CK3 is character-focused with fixed mechanics; Open Historia is nation-focused and AI-narrated</td>
+          </tr>
+          <tr>
+            <td>Europa Universalis 4</td>
+            <td>Grand strategy, historical scope</td>
+            <td>Open Historia is free and open source; EU4 requires purchase plus DLC</td>
+          </tr>
+          <tr>
+            <td>FreeCiv</td>
+            <td>Open-source strategy game</td>
+            <td>FreeCiv is 4X civilisation-building; Open Historia is grand strategy with AI diplomacy</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Who Is Open Historia For?</h2>
+    <div class="feature-grid">
+      <div class="feature-tag">Grand strategy fans looking for a free option</div>
+      <div class="feature-tag">Pax Historia players who want unmetered play and their own AI</div>
+      <div class="feature-tag">Modders and map creators who want full creative control</div>
+      <div class="feature-tag">Self-hosters who want to run their own game server</div>
+      <div class="feature-tag">Scenario creators and world-builders</div>
+      <div class="feature-tag">Players who value open-source software and community ownership</div>
+      <div class="feature-tag">Android users wanting a grand strategy game on mobile</div>
+      <div class="feature-tag">AI enthusiasts interested in LLM-powered game mechanics</div>
+    </div>
+
+    <h2>How to Switch from Pax Historia</h2>
+    <div class="step">
+      <strong>1. Get Open Historia for free</strong>
+      <p>No account, no payment, no registration. <a href="/wiki/install/">Download the desktop app</a> for Windows, macOS or Linux, install the Android app, or try the browser demo.</p>
+    </div>
+    <div class="step">
+      <strong>2. Connect an AI provider</strong>
+      <p>Follow the <a href="/wiki/ai-setup/">AI setup guide</a>. The AI runs the world, so this is required — a free Gemini key is enough to start, and a local model keeps everything on your machine.</p>
+    </div>
+    <div class="step">
+      <strong>3. Learn the mechanics</strong>
+      <p>Read the <a href="/wiki/how-to-play/">how to play guide</a>: the map, diplomacy, plain-language actions, troops, spies, time skips, and the map editor.</p>
+    </div>
+    <div class="step">
+      <strong>4. Join the community</strong>
+      <p>Join the <a href="https://discord.gg/QaqAK7fQAg" target="_blank" rel="noopener">Discord server</a> to connect with other players, share scenarios, get help, and influence the development roadmap.</p>
+    </div>
+
+    <h2>Frequently Asked Questions</h2>
+
+    <div class="card">
+      <h3>Is Open Historia really free?</h3>
+      <p>Yes. Open Historia is <strong>completely free</strong> under the AGPL-3.0 license: no purchase, no microtransactions, no subscription, no ads, no play-time limits. The one thing you supply is an AI provider — a free Gemini key or a local model costs nothing; paid providers charge you directly for what you use.</p>
+    </div>
+
+    <div class="card">
+      <h3>Is Open Historia the same as Pax Historia?</h3>
+      <p>No. Open Historia is an <strong>independent, open-source project</strong> inspired by the same idea — AI-simulated alternate history — and is not affiliated with Pax Historia. It is built from scratch by its community for players who want that experience free, on their own machine, with their own AI, and with a full map editor.</p>
+    </div>
+
+    <div class="card">
+      <h3>Can I play Open Historia offline?</h3>
+      <p>Yes. The desktop app runs the whole game on your machine, and with a local model (Ollama, LM Studio, or llama.cpp) even the AI runs without an internet connection. See the <a href="/wiki/ai-setup/">AI setup guide</a>.</p>
+    </div>
+
+    <div class="card">
+      <h3>Is there an Android version?</h3>
+      <p>Yes. Download <code>open-historia.apk</code> from the <a href="https://github.com/Open-Historia/open-historia/releases/tag/android" target="_blank" rel="noopener">Android release</a>. It is the browser version packaged as an app: your games are saved on the phone and the world map is streamed from the community content nodes, so there is no server to run.</p>
+    </div>
+
+    <div class="card">
+      <h3>Can I create and share my own scenarios?</h3>
+      <p>Yes. Use the <strong>full vector map editor</strong> to draw regions, place cities, set owners, and define starting conditions, then publish the scenario to the Scenario Hub from the in-game Community tab.</p>
+    </div>
+
+    <h2>Ready to Play?</h2>
+    <p>Open Historia is the free, open-source alternative to Pax Historia — AI-driven diplomacy and events, a full map editor, community scenarios, and apps for desktop and Android. Yours to run, yours to change.</p>
+
+    <a href="/wiki/install/" class="cta">Get Started for Free</a>
+    <a href="/" class="cta cta-secondary" style="margin-left: 0.75rem;">Try the Browser Demo</a>
+
+    <footer>
+      <p>Open Historia — free, open-source grand strategy game. <a href="https://github.com/Open-Historia/open-historia" target="_blank" rel="noopener">GitHub</a> · <a href="https://discord.gg/QaqAK7fQAg" target="_blank" rel="noopener">Discord</a> · <a href="/sitemap.xml">Sitemap</a></p>
+    </footer>
+  </div>
+</body>
+</html>

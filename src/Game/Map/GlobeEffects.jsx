@@ -1,0 +1,292 @@
+/*! Open Historia — globe celestial rendering, day/night lighting + orbit © 2026 Nicholas Krol, AGPL-3.0-or-later (see LICENSE). */
+import { useEffect } from "react";
+import { useMap } from "react-map-gl/maplibre";
+import {
+  directionFromLngLat,
+  globeTransitionOpacity,
+  projectGlobeSun,
+  subsolarPoint,
+} from "./globeSunMath.js";
+import {
+  drawGlobeLighting,
+  releaseGlobeLighting,
+} from "./globeCanvasLighting.js";
+import {
+  drawCelestialStars,
+  releaseCelestialStars,
+} from "./globeCelestialCanvas.js";
+import { MAP_SETTING_KEYS, useMapSetting } from "../../runtime/mapSettings.js";
+import { isConstrainedDevice } from "../../runtime/deviceProfile.js";
+
+const ROTATION_DEG_PER_MS = 360 / (10 * 60 * 1000);
+const INTERACTION_GRACE_MS = 3000;
+// While the user is actively dragging/zooming the stars redraw at 25fps rather
+// than 60: each frame is ~1,800 immediate-mode 2D canvas arc()+fill() calls, so
+// full-rate redrawing during a gesture competes with MapLibre's own render for
+// the main thread. At drag speeds 25fps is visually indistinguishable. While
+// idle (including during auto-rotate), throttle down harder still — this is
+// the single biggest lever on sustained CPU/GPU load, since idle auto-rotate
+// used to force a full MapLibre re-render plus a from-scratch lighting repaint
+// 60 times a second, forever, even with the phone just sitting on a table.
+const CELESTIAL_FRAME_MS_ACTIVE = 1000 / 25;
+const CELESTIAL_FRAME_MS_IDLE = 1000 / 15;
+// Redraw lighting on every frame during camera movement to avoid visible lag.
+// Uses the cheap immediate: true draw path during interaction, throttling only when idle.
+const LIGHTING_FRAME_MS_ACTIVE = 0;
+// Except on a phone (runtime/deviceProfile.js): there each of those redraws is
+// a 48,000-pixel shade on the main thread (globeCanvasLighting.js), and a
+// minute of dragging the globe was the steadiest heat source on the device.
+// 30 fps is every other frame; the throttle's trailing timer still draws the
+// final position when the drag stops.
+const LIGHTING_FRAME_MS_ACTIVE_CONSTRAINED = 1000 / 30;
+const LIGHTING_FRAME_MS_IDLE = 1000 / 15;
+// Idle auto-rotation itself doesn't need a fresh jumpTo() every animation
+// frame either — updating the camera 15x/sec still reads as smooth rotation
+// but avoids tripling MapLibre's re-render work compared to 60x/sec.
+const IDLE_ROTATE_FRAME_MS = 1000 / 15;
+// The terminator creeps 0.25°/minute as the real Earth turns; refresh on this
+// cadence even when the map is fully idle (no render events fire then), so the
+// day/night line stays live without a per-frame cost.
+const LIVE_SUN_REFRESH_MS = 60 * 1000;
+
+// Terrain pushes each vertex out by elevation / earth radius.
+const EARTH_RADIUS_M = 6371008.8;
+const MAX_TERRAIN_ELEVATION_M = 8849;
+
+const terrainSurfaceRadii = (mapInstance) => {
+  const terrain = mapInstance.getTerrain?.();
+  if (!terrain) return 0;
+  const exaggeration = Number.isFinite(terrain.exaggeration) ? terrain.exaggeration : 1;
+  if (exaggeration <= 0) return 0;
+  return (exaggeration * MAX_TERRAIN_ELEVATION_M) / EARTH_RADIUS_M;
+};
+
+// The sun, stars, and surface lighting share one world frame: the REAL sun.
+// sunWorldPosition is the actual subsolar point for the current wall-clock
+// moment (seasonal declination + Earth's real rotation), so the day/night
+// shadow on the globe matches the planet outside the window; moving the camera
+// changes perspective without sliding the light across the countries.
+let sunWorldPosition = subsolarPoint();
+
+const GlobeEffects = ({ active }) => {
+  const { current: map } = useMap();
+  const autoRotateDisabled = useMapSetting(MAP_SETTING_KEYS.disableIdleRotation);
+
+  useEffect(() => {
+    if (!active || !map) return undefined;
+    const mapInstance = map.getMap?.() ?? map;
+
+    let frameId = 0;
+    let lastInteraction = 0;
+    let disposed = false;
+    let contextLost = false;
+    let lightingTimer = 0;
+    let lastLightingDraw = -Infinity;
+    let lastCelestialDraw = -Infinity;
+    let starsVisible = false;
+    let lightingVisible = false;
+    let autoRotationActive = false;
+    const activeLightingFrameMs = isConstrainedDevice()
+      ? LIGHTING_FRAME_MS_ACTIVE_CONSTRAINED
+      : LIGHTING_FRAME_MS_ACTIVE;
+    const sunElement = document.getElementById("oh-globe-sun");
+    const starsCanvas = document.getElementById("oh-globe-stars");
+    const lightingCanvas = document.getElementById("oh-globe-lighting");
+    const mapCanvas = mapInstance.getCanvas();
+
+    const markInteraction = () => {
+      lastInteraction = performance.now();
+      autoRotationActive = false;
+    };
+    const interactionEvents = ["dragstart", "zoomstart", "rotatestart", "pitchstart", "wheel"];
+    for (const event of interactionEvents) mapInstance.on(event, markInteraction);
+    const interruptAutoRotation = () => {
+      markInteraction();
+      const wasMoving = mapInstance.isMoving();
+      mapInstance.stop?.();
+      if (!wasMoving) syncVisuals(true);
+    };
+    mapCanvas.addEventListener("pointerdown", interruptAutoRotation, true);
+
+    const syncVisuals = (forceLighting = false) => {
+      if (disposed || contextLost || !mapInstance.style) return;
+      // Track the real sun every draw — a dozen trig ops, far cheaper than the
+      // canvas work below, and it keeps the terminator honest while rendering.
+      sunWorldPosition = subsolarPoint();
+      const canvas = mapInstance.getCanvas();
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      const now = performance.now();
+      const matrix = mapInstance.transform?.modelViewProjectionMatrix;
+      const projectionTransition = globeTransitionOpacity(
+        mapInstance.transform
+          ?.getProjectionDataForCustomLayer?.(true)
+          ?.projectionTransition,
+      );
+      // The globe<->mercator morph fades the stars/lighting overlays via
+      // projectionTransition (an opacity: exactly 1 on the settled globe, 0 on
+      // flat mercator, strictly between only mid-fade). That morph isn't driven
+      // by a map "move", and toggling projection fires no interaction event, so
+      // without this it would read as idle and the fade would step at 15fps.
+      // Keep the fade itself at full rate; only the settled globe throttles.
+      const isMorphing = projectionTransition > 0 && projectionTransition < 1;
+      // Only active dragging/zooming needs full 60fps precision. Idle —
+      // whether that's auto-rotating or just sitting still — settles for
+      // 15fps, which looks identical but is a fraction of the CPU/GPU cost.
+      const isIdle = !isMorphing
+        && (autoRotationActive
+          || (!mapInstance.isMoving() && now - lastInteraction > INTERACTION_GRACE_MS));
+      const celestialFrameMs = isIdle ? CELESTIAL_FRAME_MS_IDLE : CELESTIAL_FRAME_MS_ACTIVE;
+      const lightingFrameMs = isIdle ? LIGHTING_FRAME_MS_IDLE : activeLightingFrameMs;
+      if (projectionTransition > 0
+        && (forceLighting || now - lastCelestialDraw >= celestialFrameMs)) {
+        lastCelestialDraw = now;
+        starsVisible = true;
+        drawCelestialStars({
+          canvas: starsCanvas,
+          matrix,
+          width,
+          height,
+          opacity: projectionTransition,
+        });
+      } else if (projectionTransition <= 0 && starsVisible) {
+        starsVisible = false;
+        drawCelestialStars({ canvas: starsCanvas, opacity: 0 });
+      }
+
+      if (sunElement) {
+        const sunDirection = directionFromLngLat(sunWorldPosition.lng, sunWorldPosition.lat);
+        const projected = projectGlobeSun({
+          sunLng: sunWorldPosition.lng,
+          sunLat: sunWorldPosition.lat,
+          matrix,
+          width,
+          height,
+        });
+        if (projected
+          && projected.x > -180 && projected.x < width + 180
+          && projected.y > -180 && projected.y < height + 180) {
+          sunElement.style.opacity = String(projectionTransition);
+          // Position/scale only, via translate3d — this runs on the GPU
+          // compositor and never invalidates paint. The glow is a STATIC CSS
+          // drop-shadow on #oh-globe-sun (see World.jsx); recomputing the
+          // filter string here re-rasterized the element's shadow every frame
+          // during drags, which cost far more than the blur it varied.
+          sunElement.style.transform = `translate3d(${projected.x.toFixed(1)}px, ${projected.y.toFixed(1)}px, 0) translate(-50%, -50%) scale(${projected.scale.toFixed(3)})`;
+        } else {
+          sunElement.style.opacity = "0";
+        }
+      }
+
+      if (projectionTransition > 0) {
+        const lightingDelay = lightingFrameMs - (now - lastLightingDraw);
+        if (forceLighting || lightingDelay <= 0) {
+          if (lightingTimer) clearTimeout(lightingTimer);
+          lightingTimer = 0;
+          lastLightingDraw = now;
+          lightingVisible = true;
+          drawGlobeLighting({
+            canvas: lightingCanvas,
+            matrix,
+            cameraPosition: mapInstance.transform?.cameraPosition,
+            sunDirection: directionFromLngLat(sunWorldPosition.lng, sunWorldPosition.lat),
+            width,
+            height,
+            opacity: projectionTransition,
+            terrainRadii: terrainSurfaceRadii(mapInstance),
+            immediate: autoRotationActive || mapInstance.isMoving(),
+          });
+        } else if (!lightingTimer) {
+          lightingTimer = window.setTimeout(() => {
+            lightingTimer = 0;
+            syncVisuals(true);
+          }, lightingDelay);
+        }
+      } else if (lightingVisible) {
+        lightingVisible = false;
+        clearTimeout(lightingTimer);
+        lightingTimer = 0;
+        releaseGlobeLighting(lightingCanvas);
+      }
+    };
+
+    let lastRotateTick = performance.now();
+    const tick = (now) => {
+      if (disposed || contextLost || !mapInstance.style) return;
+      if (autoRotateDisabled) {
+        autoRotationActive = false;
+        return;
+      }
+      const idle = now - lastInteraction > INTERACTION_GRACE_MS;
+      autoRotationActive = idle && !mapInstance.isMoving();
+      if (autoRotationActive) {
+        // Advancing the camera on every animation frame forces MapLibre to
+        // fully re-render 60x/sec forever while idle. Stepping at ~15fps
+        // instead (using the real elapsed time so the rotation *speed* is
+        // unaffected) looks identical but cuts that sustained render load
+        // roughly 4x — the main thing that was cooking phones on this screen.
+        const rotateDt = now - lastRotateTick;
+        if (rotateDt >= IDLE_ROTATE_FRAME_MS) {
+          lastRotateTick = now;
+          const center = mapInstance.getCenter();
+          mapInstance.jumpTo({ center: [center.lng - ROTATION_DEG_PER_MS * rotateDt, center.lat] });
+        }
+      } else {
+        lastRotateTick = now;
+      }
+      frameId = requestAnimationFrame(tick);
+    };
+
+    const handleRender = () => syncVisuals(false);
+    const handleMovementEnd = () => {
+      if (!autoRotationActive) syncVisuals(true);
+    };
+    mapInstance.on("render", handleRender);
+    mapInstance.on("moveend", handleMovementEnd);
+    const handleContextLost = () => {
+      contextLost = true;
+      cancelAnimationFrame(frameId);
+      clearTimeout(lightingTimer);
+      lightingTimer = 0;
+      if (sunElement) sunElement.style.opacity = "0";
+      releaseCelestialStars(starsCanvas);
+      releaseGlobeLighting(lightingCanvas);
+      starsVisible = false;
+      lightingVisible = false;
+      lastCelestialDraw = -Infinity;
+      lastLightingDraw = -Infinity;
+    };
+    const handleContextRestored = () => {
+      contextLost = false;
+      syncVisuals();
+      // Reset the rotation clock so the first tick after a WebGL context loss
+      // doesn't advance the globe by the whole (possibly long) lost interval.
+      lastRotateTick = performance.now();
+      frameId = requestAnimationFrame(tick);
+    };
+    mapCanvas.addEventListener("webglcontextlost", handleContextLost);
+    mapCanvas.addEventListener("webglcontextrestored", handleContextRestored);
+    syncVisuals();
+    frameId = requestAnimationFrame(tick);
+    const liveSunTimer = window.setInterval(() => syncVisuals(true), LIVE_SUN_REFRESH_MS);
+
+    return () => {
+      disposed = true;
+      cancelAnimationFrame(frameId);
+      clearInterval(liveSunTimer);
+      clearTimeout(lightingTimer);
+      mapInstance.off("render", handleRender);
+      mapInstance.off("moveend", handleMovementEnd);
+      for (const event of interactionEvents) mapInstance.off(event, markInteraction);
+      mapCanvas.removeEventListener("pointerdown", interruptAutoRotation, true);
+      mapCanvas.removeEventListener("webglcontextlost", handleContextLost);
+      mapCanvas.removeEventListener("webglcontextrestored", handleContextRestored);
+      releaseCelestialStars(starsCanvas);
+      releaseGlobeLighting(lightingCanvas);
+    };
+  }, [active, map, autoRotateDisabled]);
+
+  return null;
+};
+
+export default GlobeEffects;

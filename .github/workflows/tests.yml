@@ -1,0 +1,57 @@
+# Runs the test suite on every pull request into beta or main, and on every push
+# to beta, so a change that breaks the suite is visible on the pull request —
+# not first discovered when the desktop installer workflow refuses to build
+# (its "Run the tests" step is this same `npm test`). Twice on 2026-09-15 a PR
+# merged into beta with one failing source-text guard, and both times the next
+# installer run was the thing that noticed.
+#
+# Like desktop-beta.yml, a pull_request run uses the copy of this file on the
+# PR's BASE branch, so PRs into main only get it once main carries it too.
+name: Tests
+
+on:
+  pull_request:
+    branches:
+      - beta
+      - main
+  push:
+    branches:
+      - beta
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The same step the installer workflows run before they build.
+      - name: Run the tests
+        run: npm test
+
+      # The website's signed content manifest carries an expiry (trust.js), and an
+      # expired one silently turns every node fetch into an unverified origin
+      # fallback — which is exactly what happened when it lapsed on 2026-08-12 and
+      # nobody noticed for six weeks. Fail here two weeks before it lapses again.
+      - name: The content manifest is not about to expire
+        # Non-blocking until the owner re-signs the manifest with the offline root
+        # key: a red step that says why, not a wall in front of every push.
+        continue-on-error: true
+        run: |
+          node -e '
+            const { expires } = require("./public/content-manifest.json");
+            const left = (Date.parse(expires) - Date.now()) / 86400000;
+            if (!(left > 14)) { console.error(`public/content-manifest.json expires ${expires} (${left.toFixed(1)} days): re-sign it with scripts/sign-release.mjs`); process.exit(1); }
+            console.log(`content manifest valid for ${left.toFixed(0)} more days`);
+          '

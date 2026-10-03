@@ -1,0 +1,258 @@
+/*! Open Historia — web-mode home / connect screen © 2026 Nicholas Krol, AGPL-3.0-or-later (see LICENSE). */
+// The website's entry screen: it automatically connects the player to the best
+// available content node (lowest latency + free capacity), lets them sign in
+// (Google), and enters the game. Injected as a full-screen overlay over the (already-mounted) game; web
+// build only, never in the local download.
+
+import { connectBestNode } from "./nodeConnect.js";
+import { isNativeApp } from "./nativeBoot.js";
+
+const ENTERED_KEY = "oh:entered";
+const FONTS_HREF = "https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700;800&family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap";
+
+// The project mark, in place of the classical-building emoji.
+const MARK_SRC = "/icon-192.png";
+
+// Design tokens + layout, scoped under .oh-home so nothing leaks into the game.
+const css = `
+.oh-home{
+  --parch:#111113;--parch2:#17171a;--marble:#1a1a1f;--marble2:#212128;
+  --ink:#ece4d2;--sepia:#a4987f;--sepia2:#877c66;
+  --line:rgba(233,220,192,.14);--line2:rgba(233,220,192,.26);
+  --bronze:#c9932f;--gold:#c9932f;--gold-l:#dcb954;--red:#a8394a;--red-d:#7a1e2b;--green:#5d9149;
+  --grad-gold:linear-gradient(100deg,#a7761f 0%,#e0b44a 52%,#b98f2e 100%);
+  --shadow:0 18px 42px -22px rgba(0,0,0,.8);--radius:14px;
+  --serif:'EB Garamond',Georgia,'Times New Roman',serif;
+  --display:'Cinzel',Georgia,'Times New Roman',serif;
+  position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;
+  padding:26px 20px;overflow:auto;color:var(--ink);font-family:var(--serif);font-size:17px;line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+  background:
+  radial-gradient(1200px 540px at 50% -12%, rgba(201,147,47,.14), transparent 60%),
+  radial-gradient(1000px 560px at 100% 2%, rgba(168,57,74,.08), transparent 55%),
+  repeating-linear-gradient(112deg, rgba(233,220,192,.02) 0 2px, transparent 2px 7px),
+  var(--parch);
+}
+.oh-home *{box-sizing:border-box}
+.oh-home a{color:var(--bronze);text-decoration:none;border-bottom:1px solid rgba(201,147,47,.45)}
+.oh-home a:hover{color:var(--ink)}
+
+/* card */
+.oh-card{position:relative;z-index:2;width:100%;max-width:480px;background:var(--marble);border:1px solid var(--line2);
+  border-radius:calc(var(--radius) + 4px);padding:34px 32px 26px;text-align:center;
+  /* On a dark ground a drop shadow does almost nothing, so the card is lifted by
+   *   a faint gold ring and a lit top edge instead. */
+  box-shadow:0 0 0 1px rgba(201,147,47,.22) inset,inset 0 1px 0 rgba(255,248,228,.06),var(--shadow)}
+  /* One line, always. The mark is wider than the emoji it replaced, which pushed
+   * this over the card's inner width and wrapped it. nowrap alone would overflow
+   * on a narrow screen, so the size is viewport-tied and floors low enough to fit
+   * a 320px phone. */
+  .oh-badge{display:inline-flex;align-items:center;gap:6px;padding:6px 13px;border:1px solid var(--line2);border-radius:999px;
+    white-space:nowrap;max-width:100%;font-size:clamp(.56rem,2.4vw,.82rem);color:var(--sepia);background:var(--marble2)}
+    .oh-badge b{color:#d4677a;font-weight:600}
+    .oh-badge-icon{width:1.15em;height:1.15em;border-radius:3px;display:block;flex:none;object-fit:contain}
+    .oh-logo{font-family:var(--display);font-weight:800;font-size:2.35rem;letter-spacing:.02em;line-height:1.05;margin:18px 0 0;color:var(--ink)}
+    .oh-grad{background:var(--grad-gold);-webkit-background-clip:text;background-clip:text;color:transparent}
+    .oh-tag{color:var(--sepia);font-size:1.04rem;margin:12px auto 0;max-width:400px}
+    .oh-rule{width:110px;height:2px;margin:20px auto;background:linear-gradient(90deg,transparent,var(--bronze),transparent)}
+
+    /* connection panel */
+    .oh-conn{background:var(--marble2);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;text-align:left;box-shadow:inset 0 1px 0 rgba(255,248,228,.05)}
+    .oh-conn-head{display:flex;align-items:center;gap:10px;font-family:var(--display);font-weight:600;font-size:1.06rem;color:var(--ink)}
+    .oh-conn-title b{color:var(--bronze);font-weight:700;font-family:ui-monospace,Consolas,monospace;font-size:.94em}
+    .oh-dot{width:11px;height:11px;border-radius:50%;flex:0 0 auto;background:var(--gold);box-shadow:0 0 0 3px rgba(201,147,47,.22);animation:ohpulse 1.15s ease-in-out infinite}
+    .oh-dot.ok{background:var(--green);box-shadow:0 0 0 3px rgba(93,145,73,.25);animation:none}
+    .oh-dot.origin{background:var(--bronze);box-shadow:0 0 0 3px rgba(201,147,47,.22);animation:none}
+    @keyframes ohpulse{0%,100%{opacity:.35}50%{opacity:1}}
+    .oh-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:14px}
+    .oh-stat{background:var(--marble);border:1px solid var(--line);border-radius:9px;padding:9px 10px}
+    .oh-stat-k{font-family:var(--display);font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;color:var(--sepia2)}
+    .oh-stat-v{font-size:1.12rem;font-weight:600;color:var(--ink);margin-top:2px}
+    .oh-bar{height:7px;margin-top:11px;background:var(--parch);border:1px solid var(--line);border-radius:99px;overflow:hidden}
+    .oh-bar>i{display:block;height:100%;background:var(--grad-gold);width:0;transition:width .5s ease}
+    .oh-conn-sub{color:var(--sepia);font-size:.92rem;margin-top:12px;font-style:italic}
+
+    /* account + buttons */
+    .oh-acct{margin-top:20px;text-align:left}
+    .oh-h4{font-family:var(--display);font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:var(--bronze);margin:0 0 10px;text-align:center}
+    .oh-gbtn{display:flex;justify-content:center;min-height:44px}
+    .oh-msg{color:var(--sepia);font-size:.9rem;margin:9px 0 0;text-align:center}
+    .oh-btn{width:100%;font-family:var(--display);font-size:.9rem;letter-spacing:.06em;text-transform:uppercase;font-weight:700;
+      cursor:pointer;border-radius:11px;padding:14px 20px;border:1px solid transparent;transition:transform .12s ease,box-shadow .2s,background .2s}
+      .oh-btn:hover{transform:translateY(-2px)}
+      .oh-btn:focus-visible{outline:2px solid var(--gold-l);outline-offset:3px}
+      .oh-btn:disabled{cursor:not-allowed;opacity:.45;filter:grayscale(.85);transform:none;box-shadow:none}
+      .oh-btn:disabled:hover{transform:none}
+      .oh-btn.ghost{background:var(--marble);border-color:var(--line2);color:var(--ink)}
+      .oh-btn.ghost:hover{background:var(--marble2)}
+      .oh-btn.primary{background:linear-gradient(180deg,#98283a,var(--red-d));color:#f7eccf;border-color:rgba(255,222,160,.4);box-shadow:0 12px 30px -12px rgba(0,0,0,.85);font-size:1rem;padding:15px}
+      .oh-btn.primary:hover{background:linear-gradient(180deg,#a12b3e,#7a1e2b)}
+      .oh-foot{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 18px;margin-top:20px;font-family:var(--display);font-size:.78rem;letter-spacing:.05em;color:var(--sepia2)}
+      .oh-foot a{border:0;color:var(--sepia2)}.oh-foot a:hover{color:var(--ink)}
+      .oh-trust{margin-top:14px;font-size:.82rem;color:var(--sepia2);font-style:italic}
+      .oh-demo{margin:14px 0 0;padding:11px 13px;border:1px solid var(--line2);border-left:3px solid var(--bronze);border-radius:8px;background:rgba(201,147,47,.10);text-align:left}
+      .oh-demo b{color:var(--ink)}
+      .oh-demo-t{color:var(--ink);font-size:.92rem;font-weight:600;margin-bottom:3px}
+      .oh-demo-b{color:var(--sepia);font-size:.85rem;line-height:1.45}
+      .oh-demo-b a{color:var(--bronze);text-decoration:underline}
+      .oh-modal{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(9,9,11,.88);backdrop-filter:blur(4px)}
+      .oh-modal-box{max-width:520px;width:100%;background:var(--marble);border:1px solid var(--line2);border-top:4px solid var(--bronze);border-radius:12px;padding:24px 24px 20px;box-shadow:var(--shadow);text-align:left}
+      .oh-modal-h{color:var(--ink);font-size:1.28rem;font-weight:700;margin:0 0 10px;font-family:var(--display);letter-spacing:.02em}
+      .oh-modal-p{color:var(--sepia);font-size:.95rem;line-height:1.55;margin:0 0 11px}
+      .oh-modal-p b{color:var(--ink)}
+      .oh-modal-p a{color:var(--bronze);text-decoration:underline}
+      .oh-modal-acts{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+      .oh-modal-acts .oh-btn{flex:1 1 190px;margin:0;width:auto;display:flex;align-items:center;justify-content:center;text-align:center;text-decoration:none}
+      `;
+
+      const el = (tag, props = {}, ...kids) => { const n = document.createElement(tag); Object.assign(n, props); for (const k of kids) if (k != null) n.append(k); return n; };
+
+      let overlay, connPanel, playBtn;
+
+      const statCell = (label, value) => el("div", { className: "oh-stat" },
+                                            el("div", { className: "oh-stat-k", textContent: label }),
+                                            el("div", { className: "oh-stat-v", textContent: value }));
+
+      const renderConnection = (c) => {
+        // Entering before a node is picked would start the game with no map source
+        // resolved, so the button stays disabled until the connection settles — either
+        // on a community node or on the origin fallback, both of which are playable.
+        if (playBtn) playBtn.disabled = !c;
+        if (!connPanel) return;
+        if (!c) {
+          connPanel.replaceChildren(
+            el("div", { className: "oh-conn-head" }, el("span", { className: "oh-dot" }), el("span", { className: "oh-conn-title", textContent: "Finding the nearest node…" })),
+                                    el("div", { className: "oh-conn-sub", textContent: "Locating the fastest community server with free capacity." }),
+          );
+          return;
+        }
+        if (c.origin) {
+          connPanel.replaceChildren(
+            el("div", { className: "oh-conn-head" }, el("span", { className: "oh-dot origin" }), el("span", { className: "oh-conn-title", textContent: "Connected via the origin" })),
+                                    el("div", { className: "oh-conn-sub", textContent: "No community node is online right now — the world map streams from the project origin. You can play normally." }),
+          );
+          return;
+        }
+        const pct = Math.min(100, Math.round((c.users / Math.max(1, c.max)) * 100));
+        connPanel.replaceChildren(
+          // Anonymous node id only — never the operator's name — keeps hosters private.
+          el("div", { className: "oh-conn-head" }, el("span", { className: "oh-dot ok" }),
+             el("span", { className: "oh-conn-title" }, "Connected to ", el("b", { textContent: c.id || "a node" }))),
+                                  el("div", { className: "oh-stats" },
+                                     statCell("Region", c.region || "—"),
+                                     statCell("Players", `${c.users}/${c.max}`)),
+                                  el("div", { className: "oh-bar" }, el("i", { style: `width:${pct}%` })),
+                                  el("div", { className: "oh-conn-sub", textContent: "The world map streams from this verified community node — every byte checksum-checked." }),
+        );
+      };
+
+// Remembered for the tab session, so a reload does not ask again. Exported
+// because the Android app never shows this screen at all (nativeBoot.js, wired
+// in index.js) and must not leave shouldShowHome() answering true behind it.
+export const markEntered = () => { try { sessionStorage.setItem(ENTERED_KEY, "1"); } catch { /* private mode */ } };
+const enter = () => { markEntered(); overlay?.remove(); overlay = null; };
+
+      // Shown in front of the Enter button rather than beside it: the same words on
+      // the card were next to a large primary button and went unread. Dismissing it is
+      // the only way through, and it is remembered for the tab session so a player who
+      // has read it is not asked again.
+      const DEMO_ACK_KEY = "oh:demo-ack";
+
+// The Android app is this same bundle packaged with Capacitor, so it inherits a
+// notice written for the WEBSITE: "this is a demo, get the desktop app, expect
+// lag". None of that is true there — the app IS the real thing, it keeps its own
+// games and its own copy of the map, and there is no desktop app to send an
+// Android player to. (In practice the app does not reach this screen at all any
+// more — see nativeBoot.js — but the guard stays: it is what makes that true if
+// the home page is ever shown there deliberately.)
+const demoAcknowledged = () => {
+  try { return sessionStorage.getItem(DEMO_ACK_KEY) === "1"; } catch { return false; }
+};
+
+      const showDemoNotice = (onContinue) => {
+        if (isNativeApp() || demoAcknowledged()) return onContinue();
+
+        const close = () => {
+          try { sessionStorage.setItem(DEMO_ACK_KEY, "1"); } catch { /* private mode */ }
+          document.removeEventListener("keydown", onKey);
+          modal.remove();
+          onContinue();
+        };
+        // Esc continues rather than cancelling: there is nothing to cancel, and a
+        // dialog that traps someone who pressed Esc is worse than one that lets go.
+        const onKey = (event) => { if (event.key === "Escape") close(); };
+
+        const go = el("button", { className: "oh-btn primary", textContent: "Play the demo anyway", onclick: close });
+        const modal = el("div", { className: "oh-modal" },
+                         el("div", { className: "oh-modal-box" },
+                            el("h2", { className: "oh-modal-h", id: "oh-demo-h", textContent: "This is a demo of the game" }),
+                            el("p", { className: "oh-modal-p" },
+                               "Open Historia is meant to be played in the ",
+                               el("b", { textContent: "desktop app" }),
+                               ", which runs the world map from your own machine.",
+                            ),
+                            el("p", { className: "oh-modal-p" },
+                               "The browser version streams every map tile over the network, so expect ",
+                               el("b", { textContent: "noticeable lag" }),
+                               " — especially when zooming or panning. It is here to try the game, not to be the best way to play it.",
+                            ),
+                            el("p", { className: "oh-modal-p", textContent: "Either way, your games are saved on this device." }),
+                            el("div", { className: "oh-modal-acts" },
+                               el("a", { className: "oh-btn ghost", href: "https://github.com/Open-Historia/open-historia/releases/tag/desktop-stable", target: "_blank", rel: "noopener", textContent: "Get the desktop app" }),
+                               go,
+                            ),
+                         ),
+        );
+        modal.setAttribute("role", "dialog");
+        modal.setAttribute("aria-modal", "true");
+        modal.setAttribute("aria-labelledby", "oh-demo-h");
+        document.addEventListener("keydown", onKey);
+        document.body.append(modal);
+        go.focus();
+      };
+
+      export const showHomePage = () => {
+        if (typeof document === "undefined" || document.getElementById("oh-home-root")) return;
+        if (!document.getElementById("oh-home-fonts")) {
+          document.head.append(el("link", { id: "oh-home-fonts", rel: "stylesheet", href: FONTS_HREF }));
+        }
+        document.head.append(el("style", { textContent: css }));
+
+        connPanel = el("div", { className: "oh-conn" });
+        renderConnection(null); // initial "finding…" state
+        // Starts disabled: renderConnection enables it once a node (or the origin
+        // fallback) is settled, so nobody can enter a half-connected session.
+        const play = el("button", { className: "oh-btn primary", textContent: "⚔  Enter Open Historia", onclick: () => showDemoNotice(enter) });
+        play.disabled = true;
+        playBtn = play;
+        const foot = el("div", { className: "oh-foot" },
+                        el("a", { href: "https://github.com/Open-Historia/open-historia", target: "_blank", rel: "noopener", textContent: "GitHub" }),
+                        el("a", { href: "https://discord.gg/QaqAK7fQAg", target: "_blank", rel: "noopener", textContent: "Discord" }),
+                        el("a", { href: "https://github.com/Open-Historia/open-historia-node", target: "_blank", rel: "noopener", textContent: "Host a node" }),
+        );
+
+        const card = el("div", { className: "oh-card" },
+                        el("span", { className: "oh-badge" },
+                           el("img", { className: "oh-badge-icon", src: MARK_SRC, alt: "", width: 16, height: 16 }),
+                           "Free & open source · community-hosted alternative to ", el("b", { textContent: "Pax Historia" })),
+                        el("h1", { className: "oh-logo" }, "Open ", el("span", { className: "oh-grad", textContent: "Historia" })),
+                        el("p", { className: "oh-tag", textContent: "An AI-driven alternate-history strategy game. Lead any nation on a living world map and reshape history." }),
+                        el("div", { className: "oh-rule" }),
+                        connPanel,
+                        el("div", { className: "oh-rule" }),
+                        play,
+                        el("div", { className: "oh-trust", textContent: "Trust is in the checksum and the project signature — never in the node itself." }),
+                        foot,
+        );
+        overlay = el("div", { className: "oh-home", id: "oh-home-root" }, card);
+        document.body.append(overlay); // up immediately — no flash of the game behind
+
+        // Connect to the best node in the background.
+        connectBestNode().then(renderConnection).catch(() => renderConnection({ origin: true }));
+      };
+
+      // Whether the home page should be shown this load (skipped once the player has
+      // entered this tab session).
+      export const shouldShowHome = () => {
+        try { return sessionStorage.getItem(ENTERED_KEY) !== "1"; } catch { return true; }
+      };

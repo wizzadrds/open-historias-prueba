@@ -1,0 +1,102 @@
+/*! Open Historia — web-mode UI settings + language packs © 2026 Nicholas Krol, AGPL-3.0-or-later (see LICENSE). */
+// Mirrors the server's /api/ui-settings and /api/lang endpoints (server/server.js:150-236)
+// for the web build. Shipped language packs (public/lang/<code>.json — copied to the
+// deployed site by Vite) are merged OVER the browser's IndexedDB overlay of
+// AI-generated translations, exactly like the server merges shipped + saved packs.
+// UI settings persist in IndexedDB. Only bundled into the web build (VITE_OH_WEB).
+
+import { kvGet, kvUpdate } from "./idb.js";
+import { jsonResponse, errorResponse } from "./util.js";
+
+const isLangCode = (code) => /^[a-z]{2,3}$/.test(code);
+const langKey = (code) => `lang:${code}`;
+const shippedPackCache = new Map();
+
+// Fetch the shipped pack Vite copied to <base>lang/<code>.json (static, same-origin).
+// This is a non-/api path, so the wrapped fetch passes it straight to the network
+// (no recursion into the router). Missing packs (most languages ship none) → {}.
+//
+// Resolve against import.meta.env.BASE_URL, NOT location.origin. openhistoria.com
+// builds with --base /play/, so the packs deploy to /play/lang/*.json while an
+// origin-rooted /lang/*.json is a 404 — and the catch below turns that into an
+// empty pack, so every language silently fell back to untranslated English with
+// no error. BASE_URL is "/" for the local server, so one path serves both builds.
+const loadShippedPack = async (code) => {
+  if (shippedPackCache.has(code)) return shippedPackCache.get(code);
+  let pack = {};
+  try {
+    const base = new URL(import.meta.env.BASE_URL || "/", location.origin);
+    // no-cache, not force-cache: a site update ships a new pack at the same URL,
+    // and force-cache kept serving the old one for as long as the browser held it.
+    const response = await fetch(new URL(`lang/${code}.json`, base), { cache: "no-cache" });
+    if (response.ok) {
+      const data = await response.json();
+      if (data && typeof data === "object" && !Array.isArray(data)) pack = data;
+    }
+  } catch {
+    // No shipped pack for this language, or a non-JSON (SPA-fallback) response.
+  }
+  shippedPackCache.set(code, pack);
+  return pack;
+};
+
+// GET/PUT /api/lang/:code — merged shipped pack + IndexedDB overlay (GET), and
+// upsert AI-generated translations into the overlay (PUT), matching the server's
+// { entries } body and 3000/6000-char caps.
+export const handleLang = async (ctx) => {
+  const code = String(ctx.segments[0] || "").toLowerCase();
+  if (!code) return null;
+  if (!isLangCode(code)) return errorResponse("Invalid language code.", 400);
+
+  if (ctx.method === "GET") {
+    const [shipped, overlay] = await Promise.all([loadShippedPack(code), kvGet(langKey(code), {})]);
+    // Shipped entries win, as on the server (server.js): an overlay entry for a
+    // string the pack now covers is an older AI translation.
+    return jsonResponse({ ...(overlay || {}), ...shipped });
+  }
+
+  if (ctx.method === "PUT") {
+    const entries = ctx.body?.entries;
+    if (!entries || typeof entries !== "object" || Array.isArray(entries)) {
+      return errorResponse("Body must be { entries: { source: translation } }.", 400);
+    }
+    let added = 0;
+    const shipped = await loadShippedPack(code);
+    const merged = await kvUpdate(langKey(code), (current) => {
+      const saved = { ...(current || {}) };
+      for (const [source, translated] of Object.entries(entries)) {
+        if (
+          typeof source === "string" && typeof translated === "string" &&
+          source.length <= 3000 && translated.length <= 6000 && !Object.hasOwn(shipped, source) &&
+          saved[source] !== translated
+        ) {
+          saved[source] = translated;
+          added += 1;
+        }
+      }
+      return saved;
+    }, {});
+    return jsonResponse({ saved: added, total: Object.keys(merged).length });
+  }
+
+  return null;
+};
+
+// GET/PUT /api/ui-settings — the shared client prefs (currently the UI language),
+// persisted per-browser in IndexedDB.
+export const handleUiSettings = async (ctx) => {
+  if (ctx.method === "GET") {
+    return jsonResponse((await kvGet("ui-settings", {})) || {});
+  }
+  if (ctx.method === "PUT") {
+    const next = await kvUpdate("ui-settings", (current) => {
+      const merged = { ...(current || {}) };
+      if (typeof ctx.body?.language === "string" && ctx.body.language.trim().length <= 16) {
+        merged.language = ctx.body.language.trim();
+      }
+      return merged;
+    }, {});
+    return jsonResponse(next);
+  }
+  return null;
+};

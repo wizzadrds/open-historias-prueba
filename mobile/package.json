@@ -1,0 +1,23 @@
+{
+  "name": "open-historia-mobile",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Open Historia for Android: the web build inside a Capacitor WebView with everything on the device — the library in IndexedDB, the world map inside the APK (npm run map fetches and verifies it), files saved through the share sheet, a LAN model reached through native HTTP. The community hub and the player's own AI provider are the only network use.",
+  "scripts": {
+    "map": "node ./scripts/stage-map-assets.mjs",
+    "www": "node ./scripts/stage-www.mjs",
+    "sync": "cap sync android",
+    "open": "cap open android",
+    "apk": "npm run map && npm run www && cap sync android && cd android && gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/filesystem": "^7.0.0",
+    "@capacitor/share": "^7.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^7.0.0"
+  }
+}

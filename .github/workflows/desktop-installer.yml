@@ -1,0 +1,138 @@
+# Builds the desktop app for Windows, macOS and Linux and attaches the installers
+# to a release. The player-facing point of this file is that NOTHING is built on
+# the player's machine any more: the client is compiled here, packaged with the
+# server into an Electron app, and shipped as one download per platform.
+name: Desktop installers
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish the installers to
+        required: false
+        default: desktop-stable
+  push:
+    tags:
+      - "desktop-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false # one platform failing must not throw away the other two
+      matrix:
+        include:
+          # Each installer must be built on its own OS: electron-builder shells out
+          # to platform tooling (NSIS on Windows, hdiutil for the .dmg), and a macOS
+          # build simply cannot be produced anywhere but macOS.
+          - os: windows-latest
+            args: --win
+          - os: macos-latest
+            args: --mac
+          - os: ubuntu-latest
+            args: --linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      # Building a .dmg mounts a volume and then detaches it. On the macOS runners
+      # Spotlight starts indexing that volume the moment it appears and still holds
+      # it when dmg-builder tries to unmount, so `hdiutil detach` fails with exit 16
+      # (resource busy) and takes the whole build with it. Nothing here needs an
+      # index.
+      - name: Stop Spotlight indexing the build volume
+        if: runner.os == 'macOS'
+        run: sudo mdutil -a -i off || true
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The map archives are NOT packaged - they are ~200MB and the app downloads
+      # them on first launch - so nothing here fetches them.
+      # One id for all three platforms in this run, baked into the app and written
+      # into latest.json below. The app compares the two to know an update exists.
+      - name: Stamp the build id
+        shell: bash
+        run: |
+          echo "{\"build\":\"${{ github.run_id }}\"}" > electron/build-id.json
+          cat electron/build-id.json
+
+      # package.json ships 0.0.0 and electron-updater decides whether an update
+      # exists by comparing SEMVER — so without a real, increasing version here
+      # every build would look identical to the one already installed and the app
+      # would never update itself. run_number increments per run and is shared by
+      # all three jobs in it, so one release is one version on every platform.
+      - name: Stamp the app version
+        shell: bash
+        run: |
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='0.0.${{ github.run_number }}';fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
+          node -p "'version: '+require('./package.json').version"
+
+      - name: Build the client
+        run: npm run build
+
+      # --publish never still WRITES the latest*.yml feed files (the publish block
+      # in package.json is what produces them); it only declines to upload them,
+      # which the release step below does itself.
+      - name: Build the installer
+        run: npx electron-builder ${{ matrix.args }} --publish never
+        env:
+          # No code-signing certificate yet. Without this electron-builder tries to
+          # discover one and fails the build rather than skipping signing.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload as a build artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: open-historia-${{ matrix.os }}
+          # Only the finished installers; release/ also holds the unpacked app tree.
+          path: |
+            release/*.exe
+            release/*-mac-*.zip
+            release/*.AppImage
+            release/*.deb
+          if-no-files-found: error
+
+      - name: Attach to the release
+        if: github.event_name == 'push' || inputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+        shell: bash
+        run: |
+          # --clobber so re-running replaces the asset instead of erroring, and the
+          # release is created on first use rather than having to exist already.
+          # Three jobs race here, so creating it tolerates "already exists".
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --title "Open Historia for Desktop" \
+              --notes "Windows, macOS and Linux downloads. The world map downloads on first launch." \
+            || true
+          shopt -s nullglob
+          # The latest*.yml files ARE the update feed: electron-updater fetches
+          # latest.yml (win) / latest-mac.yml / latest-linux.yml from this release
+          # and compares the version in it against the running app. One per
+          # platform, so the three jobs cannot overwrite each other's.
+          files=(release/*.exe release/*-mac-*.zip release/*.AppImage release/*.deb release/latest*.yml)
+          # Only the Windows job writes latest.json, so three racing jobs cannot
+          # each publish a different view of the same release.
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            B="https://github.com/${{ github.repository }}/releases/download/$TAG"
+            cat > latest.json <<JSON
+          {
+            "build": "${{ github.run_id }}",
+            "windows": "$B/Open-Historia-Setup.exe",
+            "mac": "$B/Open-Historia-mac-arm64.zip",
+            "linux": "$B/Open-Historia-x86_64.AppImage",
+            "linuxDeb": "$B/Open-Historia-amd64.deb"
+          }
+          JSON
+            files+=(latest.json)
+          fi
+          gh release upload "$TAG" "${files[@]}" --clobber

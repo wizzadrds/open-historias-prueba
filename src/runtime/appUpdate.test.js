@@ -1,0 +1,110 @@
+/*! Open Historia — update-check helper tests © 2026 Nicholas Krol, AGPL-3.0-or-later (see LICENSE). */
+// Run: node --test src/runtime/appUpdate.test.js
+
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  APP_UPDATE_SETTLED_STATES,
+  describeUpdateFailure,
+  isUpdateAvailable,
+  isUpdateSettled,
+  parseUpdateManifest,
+  toBuild,
+} from "./appUpdate.js";
+
+test("toBuild accepts positive integers (number or string)", () => {
+  assert.equal(toBuild(5), 5);
+  assert.equal(toBuild("42"), 42);
+});
+test("toBuild floors fractional values", () => {
+  assert.equal(toBuild(7.9), 7);
+});
+test("toBuild rejects zero, negatives, NaN, null, undefined, junk", () => {
+  for (const v of [0, -1, NaN, null, undefined, "", "abc", {}, []]) assert.equal(toBuild(v), null);
+});
+
+test("parseUpdateManifest normalizes a full payload", () => {
+  assert.deepEqual(
+    parseUpdateManifest({ build: "12", apk: " https://x/a.apk ", notes: " hi " }),
+    { build: 12, apk: "https://x/a.apk", notes: "hi" },
+  );
+});
+test("parseUpdateManifest defaults apk/notes to empty strings", () => {
+  assert.deepEqual(parseUpdateManifest({ build: 3 }), { build: 3, apk: "", notes: "" });
+});
+test("parseUpdateManifest returns null without a usable build", () => {
+  for (const v of [null, undefined, "nope", 5, {}, { build: 0 }, { build: "x" }, { apk: "a" }]) {
+    assert.equal(parseUpdateManifest(v), null);
+  }
+});
+test("parseUpdateManifest ignores non-string apk/notes", () => {
+  assert.deepEqual(parseUpdateManifest({ build: 1, apk: 9, notes: {} }), { build: 1, apk: "", notes: "" });
+});
+
+test("isUpdateAvailable true when latest build is strictly newer", () => {
+  assert.equal(isUpdateAvailable(10, { build: 11 }), true);
+});
+test("isUpdateAvailable false when equal", () => {
+  assert.equal(isUpdateAvailable(10, { build: 10 }), false);
+});
+test("isUpdateAvailable false when latest is older", () => {
+  assert.equal(isUpdateAvailable(10, { build: 9 }), false);
+});
+test("isUpdateAvailable false when current build is unknown (dev/web/desktop)", () => {
+  for (const c of [null, undefined, 0, NaN, "x"]) assert.equal(isUpdateAvailable(c, { build: 999 }), false);
+});
+test("isUpdateAvailable false when manifest is missing/invalid", () => {
+  for (const m of [null, undefined, {}, { build: 0 }, "nope"]) assert.equal(isUpdateAvailable(5, m), false);
+});
+test("isUpdateAvailable accepts string build numbers on both sides", () => {
+  assert.equal(isUpdateAvailable("10", { build: "11" }), true);
+});
+test("isUpdateAvailable never throws on hostile input", () => {
+  assert.doesNotThrow(() => isUpdateAvailable({}, []));
+  assert.doesNotThrow(() => isUpdateAvailable(Symbol.iterator, () => {}));
+});
+
+// The banner polls for download progress only while the updater is unsettled, so a
+// state wrongly called settled stops that poll for good and freezes the banner
+// mid-update. These pin the classification rather than the wording.
+test("isUpdateSettled is true only for states that never change again", () => {
+  for (const state of APP_UPDATE_SETTLED_STATES) assert.equal(isUpdateSettled(state), true);
+});
+test("isUpdateSettled treats every transient updater state as still running", () => {
+  for (const state of ["idle", "checking", "available", "downloading"]) {
+    assert.equal(isUpdateSettled(state), false, `${state} must keep the progress poll alive`);
+  }
+});
+// The regression this was written for: "available" is what the updater reports
+// between finding an update and its first download-progress event. Classifying it as
+// settled stopped the poll there and left the banner stuck while the download ran on.
+test("isUpdateSettled keeps polling through 'available'", () => {
+  assert.equal(isUpdateSettled("available"), false);
+});
+test("isUpdateSettled treats an unknown or absent state as still running", () => {
+  for (const state of [undefined, null, "", "something-new", 0, {}]) {
+    assert.equal(isUpdateSettled(state), false);
+  }
+});
+test("APP_UPDATE_SETTLED_STATES holds exactly the finished states", () => {
+  assert.deepEqual([...APP_UPDATE_SETTLED_STATES].sort(), ["error", "none", "ready"]);
+});
+
+test("describeUpdateFailure keeps the updater's reason and reads as one sentence", () => {
+  assert.equal(
+    describeUpdateFailure("No newer version in the update feed."),
+    "The app could not update itself: No newer version in the update feed.",
+  );
+  assert.equal(
+    describeUpdateFailure("  net::ERR_INTERNET_DISCONNECTED \n"),
+    "The app could not update itself: net::ERR_INTERNET_DISCONNECTED.",
+  );
+});
+test("describeUpdateFailure copes with no reason at all", () => {
+  for (const v of ["", "   ", ".", null, undefined]) assert.equal(describeUpdateFailure(v), "The app could not update itself.");
+});
+test("describeUpdateFailure clips a stack-trace-sized reason", () => {
+  const text = describeUpdateFailure("x".repeat(400));
+  assert.ok(text.length < 200, text.length);
+  assert.ok(text.endsWith("…."), text.slice(-5));
+});
