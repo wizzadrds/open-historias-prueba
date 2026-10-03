@@ -52,7 +52,7 @@ import { MAP_SETTING_KEYS, getMapSettingDefaultOn, useMapSetting } from "../../r
 import { formatGameDateReadable, isGameDate, normalizeGameDate } from "../../runtime/gameDates.js";
 import { jumpDayStep, jumpTargetDate } from "../../runtime/jumpDates.js";
 import { useRealtimeSessionState } from "./realtimeSession.js";
-import { useRealtimeSessionState } from "./realtimeSession.js";
+
 
 dayjs.extend(advancedFormat);
 
