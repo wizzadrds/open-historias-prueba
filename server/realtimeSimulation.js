@@ -155,10 +155,12 @@ const addModifier = (country, modifiers, factor=1) => {
 
 const effective = (country,key,base) => base * (1 + (country.modifiers[key] || 0));
 
-export function createInitialRealtimeState({id,mode="single",name="1920 Campaign",seed=19200101,createdAt=Date.now(),gameId="",scenarioId="",startDate=REALTIME_START_DATE,world=null,countryDefinitions=null}={}) {
+export function createInitialRealtimeState({id,mode="single",name="Campaign",seed=19200101,createdAt=Date.now(),gameId="",scenarioId="",startDate=REALTIME_START_DATE,world=null,countryDefinitions=null,gameData=null,visibility="public"}={}) {
   const state = {
-    version:1,id,mode,name,seed,gameId:String(gameId||""),scenarioId:String(scenarioId||""),sequence:0,createdAt,lastSavedAt:createdAt,
+    version:1,id,mode,name,seed,gameId:String(gameId||""),scenarioId:String(scenarioId||""),visibility:visibility==="private"?"private":"public",sequence:0,createdAt,lastSavedAt:createdAt,
     clock:{date:String(startDate||REALTIME_START_DATE),speed:1,paused:false,lastWallClockMs:createdAt,accumulatorMs:0},
+    game:gameData && typeof gameData==="object" ? {...clone(gameData),gameDate:String(startDate||gameData.gameDate||gameData.startDate||REALTIME_START_DATE)} : {startDate:String(startDate||REALTIME_START_DATE),gameDate:String(startDate||REALTIME_START_DATE)},
+    world:world && typeof world==="object" ? clone(world) : {},
     countries:countriesFromDefinitions(countryDefinitions?.length ? countryDefinitions : countryDefinitionsFromWorld(world)),
     players:{},rooms:{hostPlayerId:null},
     events:[],notifications:[],chat:[],diplomacyRequests:[],rules:{
@@ -314,6 +316,7 @@ export function tickSimulation(state,days) {
   if(days<=0) return {days:0,changed:false};
   const random=rng((state.seed + state.stats.daysSimulated + days) >>> 0);
   state.clock.date=addDays(state.clock.date,days);
+  if(state.game && typeof state.game==="object") state.game.gameDate=state.clock.date;
   state.stats.daysSimulated += days;
   for(const country of Object.values(state.countries)){
     progressCountry(state,country,days);
@@ -462,7 +465,7 @@ export class RealtimeRoomStore {
     return days;
   }
   save(state){state.lastSavedAt=Date.now();writeJsonAtomic(roomPath(state.id),state);}
-  list(){ensureDir();const ids=new Set(this.rooms.keys());try{for(const file of fs.readdirSync(DATA_DIR)){if(file.startsWith("rt-")&&file.endsWith(".json"))ids.add(file.slice(0,-5));}}catch{/* data directory may be empty */}return [...ids].map(id=>this.load(id)).filter(Boolean).map(state=>({id:state.id,name:state.name,mode:state.mode,date:state.clock?.date||"1920-01-01",speed:state.clock?.speed||0,players:Object.values(state.players||{}).map(p=>({name:p.name,countryCode:p.countryCode,connected:!!p.connected})),playerCount:Object.keys(state.players||{}).length}));}
+  list(){ensureDir();const ids=new Set(this.rooms.keys());try{for(const file of fs.readdirSync(DATA_DIR)){if(file.startsWith("rt-")&&file.endsWith(".json"))ids.add(file.slice(0,-5));}}catch{/* data directory may be empty */}return [...ids].map(id=>this.load(id)).filter(Boolean).map(state=>({id:state.id,name:state.name,mode:state.mode,visibility:state.visibility||"public",gameId:state.gameId||"",date:state.clock?.date||REALTIME_START_DATE,speed:state.clock?.speed||0,players:Object.values(state.players||{}).map(p=>({name:p.name,countryCode:p.countryCode,connected:!!p.connected})),playerCount:Object.keys(state.players||{}).length}));}
   close(roomId){const t=this.timers.get(roomId);if(t) clearInterval(t);this.timers.delete(roomId);const s=this.rooms.get(roomId);if(s)this.save(s);}
 }
 
