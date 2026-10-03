@@ -39,7 +39,7 @@ import {
   writeGameSnapshotsText,
 } from "../../runtime/library.js";
 import { loadCountryNames, readJson, writeJson, JSON_URLS } from "../../runtime/assets.js";
-import { useRealtimeSession } from "./realtimeSession.js";
+import { useRealtimeSessionState } from "./realtimeSession.js";
 import { LABEL_FONT_SUGGESTIONS } from "../../runtime/mapSettings.js";
 import FactionCreator from "./FactionCreator.jsx";
 import FeaturesSectionEditor from "./FeaturesSectionEditor.jsx";
@@ -1609,7 +1609,7 @@ const LibraryTopBar = () => {
     scenarios,
     selectedScenarioId,
   } = useLibraryState();
-  const realtime = useRealtimeSession();
+  const realtime = useRealtimeSessionState();
   const [activeTab, setActiveTab] = useState("games");
   const [menuOpen, setMenuOpenState] = useState(menuOpenDefault);
   // Whether the menu was opened from inside a game (⌂ Exit Game, or the game
@@ -3533,7 +3533,7 @@ const LibraryTopBar = () => {
                     setEditorError("Crea o abre una partida de Open Historia antes de iniciar el multijugador.");
                     return;
                   }
-                  realtime.start();
+                  window.dispatchEvent(new CustomEvent("oh:start-realtime"));
                   setMenuOpen(false);
                 }}
                 style={touchFit({
