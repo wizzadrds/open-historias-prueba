@@ -211,7 +211,9 @@ function progressCountry(state,country,days) {
     state.notifications.unshift({id:nextId("notification",state),at:state.clock.date,kind:"BUILDING_COMPLETE",message:`${BUILDINGS[item.type].label} completed`,countryCode:country.code});
   }
 
-  country.researchPoints += days * (1 + (country.modifiers.research || 0));\n\n  if(country.research.active){
+  country.researchPoints += days * (1 + (country.modifiers.research || 0));
+
+  if(country.research.active){
     const tech=TECHNOLOGIES.find(t=>t.id===country.research.active.techId);
     country.research.active.remainingDays-=days*(1+(country.modifiers.research||0));
     if(country.research.active.remainingDays<=0){
