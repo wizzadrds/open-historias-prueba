@@ -26,7 +26,7 @@ export function useRealtimeSession(){
   const [session,setSession]=useState(INITIAL_SESSION);
   const sessionRef=useRef(INITIAL_SESSION);
   const realtimeSnapshotRef=useRef(null);
-  const applyServerWorld=useCallback(async(snapshot,gameId,roomId,playerId,countryCode)=>{realtimeSnapshotRef.current=mergeRealtimeSnapshot(realtimeSnapshotRef.current,snapshot);let baseWorld={};try{baseWorld=await readJson(JSON_URLS.world,{defaultValue:{},force:true,clone:false})||{};}catch{}setWorldStateOverride({...baseWorld,realtime:realtimeSnapshotRef.current,multiplayer:{active:true,gameId,roomId,playerId,countryCode,clock:realtimeSnapshotRef.current?.clock||null}});},[]);
+  const applyServerWorld=useCallback(async(snapshot,gameId,roomId,playerId,countryCode)=>{realtimeSnapshotRef.current=mergeRealtimeSnapshot(realtimeSnapshotRef.current,snapshot);let baseWorld={};try{baseWorld=await readJson(JSON_URLS.world,{defaultValue:{},force:false,clone:false})||{};}catch{}setWorldStateOverride({...baseWorld,realtime:realtimeSnapshotRef.current,multiplayer:{active:true,gameId,roomId,playerId,countryCode,clock:realtimeSnapshotRef.current?.clock||null}});},[]);
   useEffect(()=>{sessionRef.current=session;publishRealtimeSession(session);},[session]);
   const socketRef=useRef(null);
   const pendingRef=useRef(null);
