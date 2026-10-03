@@ -380,7 +380,7 @@ export class RealtimeRoomStore {
     if(this.rooms.has(roomId)) return this.rooms.get(roomId);
     ensureDir();
     let state=null;
-    try{state=JSON.parse(fs.readFileSync(roomPath(roomId),"utf8"));}catch{}
+    try{state=JSON.parse(fs.readFileSync(roomPath(roomId),"utf8"));}catch{ /* missing room */ }
     if(!state) return null;
     state.playersByCountry=Object.fromEntries(Object.values(state.players||{}).map(p=>[p.countryCode,p.id]));
     this.rooms.set(roomId,state);
