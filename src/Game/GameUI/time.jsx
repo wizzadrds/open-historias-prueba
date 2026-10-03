@@ -2072,7 +2072,6 @@ const DateWidget = ({
     const events = useRuntimeState("events");
     const worldState = useRuntimeState("world");
     const realtime = useRealtimeSessionState();
-    const realtime = useRealtimeSessionState();
     const setGameData = (game) => primeRuntimeValue("game", game);
     const setEvents = (next) => primeRuntimeValue("events", next);
     const setWorldState = (world) => primeRuntimeValue("world", world);
