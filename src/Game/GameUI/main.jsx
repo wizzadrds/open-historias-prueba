@@ -32,7 +32,6 @@ import {
   syncAiDebugContext,
 } from "../AI/providerConfig.js";
 import { FallbackSwitchNotice } from "./fallbackSwitchNotice.jsx";
-import { useRealtimeSession } from "./realtimeSession.js";
 
 // Whether anything in the Fallback list has what its provider needs, and the
 // top entry's provider for the start-of-game prompt's wording. Re-read whenever
@@ -231,7 +230,6 @@ const Main = ({
 
   const [aiSetup, setAiSetup] = useState(readAiSetup);
   const { activeGame, games, loaded, runtimeScenario } = useLibraryState();
-  const realtime = useRealtimeSession();
   // The game menu names the campaign the way the library does.
   const activeCountryName = useCountryDisplayName(activeGame?.country || "");
   // No games -> nothing to simulate (the main menu covers the empty world).
@@ -634,11 +632,7 @@ const Main = ({
           }}
         />
       </Presence>
-      {realtime.status === "in-game" && (
-        <div style={{position:"fixed",right:"0.75rem",top:"0.75rem",zIndex:9999,padding:"0.28rem 0.55rem",borderRadius:"999px",background:"rgba(15,23,30,0.72)",border:"1px solid rgba(43,193,243,0.28)",color:"rgba(235,247,252,0.9)",fontSize:"0.68rem",fontWeight:700,letterSpacing:"0.06em",backdropFilter:"blur(10px)"}}>
-          ONLINE · {realtime.clock?.date || activeGame?.currentDate || ""}
-        </div>
-      )}
+
       <FallbackSwitchNotice />
     </>
   );
