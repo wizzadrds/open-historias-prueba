@@ -1629,6 +1629,11 @@ const LibraryTopBar = () => {
     if (!open) setMenuOverGame(false);
     mainMenuListeners.forEach((listener) => listener());
   };
+  useEffect(() => {
+    if (realtime.status === "in-game" && menuOpen) {
+      setMenuOpen(false);
+    }
+  }, [realtime.status, menuOpen]);
   // The ⌂ Exit Game buttons: the menu, over the game the player is in.
   const exitToMenu = () => {
     setMenuOverGame(true);
