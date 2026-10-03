@@ -31,7 +31,7 @@ test("multiplayer room creation and country ownership are server-side",()=>{
 test("reconnect can reuse a disconnected identity without duplicating a country",()=>{
  const server=new FakeServer(),store=new MemoryStore(),rt=new RealtimeMultiplayer(server,{store});
  const first={socket:{write(){}},commands:[]};
- rt.message(first,{type:"CREATE_ROOM",mode:"multi",playerId:"player11",playerName:"Host",countryCode:"GBR"});
+ rt.message(first,{type:"CREATE_ROOM",gameId:"game-1",mode:"multi",playerId:"player11",playerName:"Host",countryCode:"GBR"});
  const state=store.load(first.roomId);
  state.players.player11.connected=false;
  const reconnect={socket:{write(){}},commands:[]};
@@ -43,7 +43,7 @@ test("reconnect can reuse a disconnected identity without duplicating a country"
 test("foreign clients cannot use a player's command channel to change time",()=>{
  const server=new FakeServer(),store=new MemoryStore(),rt=new RealtimeMultiplayer(server,{store});
  const host={socket:{write(){}},commands:[]};
- rt.message(host,{type:"CREATE_ROOM",mode:"multi",playerId:"player21",playerName:"Host",countryCode:"GBR"});
+ rt.message(host,{type:"CREATE_ROOM",gameId:"game-1",mode:"multi",playerId:"player21",playerName:"Host",countryCode:"GBR"});
  const guest={socket:{write(){}},commands:[]};
  rt.message(guest,{type:"JOIN_ROOM",roomId:host.roomId,playerId:"player22",playerName:"Guest",countryCode:"FRA"});
  assert.throws(()=>rt.message(guest,{type:"COMMAND",action:"SET_SPEED",payload:{speed:8}}),/Only the host/);
@@ -53,7 +53,7 @@ test("foreign clients cannot use a player's command channel to change time",()=>
 test("human diplomacy creates an expiring request and only the recipient can answer",()=>{
  const server=new FakeServer(),store=new MemoryStore(),rt=new RealtimeMultiplayer(server,{store});
  const host={socket:{write(){}},commands:[]};
- rt.message(host,{type:"CREATE_ROOM",mode:"multi",playerId:"player31",playerName:"Host",countryCode:"GBR"});
+ rt.message(host,{type:"CREATE_ROOM",gameId:"game-1",mode:"multi",playerId:"player31",playerName:"Host",countryCode:"GBR"});
  const guest={socket:{write(){}},commands:[]};
  rt.message(guest,{type:"JOIN_ROOM",roomId:host.roomId,playerId:"player32",playerName:"Guest",countryCode:"FRA"});
  rt.message(host,{type:"DIPLOMACY_REQUEST",targetCountry:"FRA",message:"Open talks"});
