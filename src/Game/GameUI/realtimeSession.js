@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { activateGame, useLibraryState } from "../../runtime/library.js";
-import { JSON_URLS, readJson } from "../../runtime/assets.js";
+import { JSON_URLS, primeJson, readJson } from "../../runtime/assets.js";
 import { setWorldStateOverride } from "../Map/useWorldState.js";
 
 const wsUrl=()=>{
@@ -12,21 +12,21 @@ const wsUrl=()=>{
 const send=(socket,message)=>{if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify(message));};
 const getStored=(key)=>{try{return localStorage.getItem(key)||"";}catch{return "";}};
 const setStored=(key,value)=>{try{localStorage.setItem(key,String(value||""));}catch{}};
-const INITIAL_SESSION={status:"idle",roomId:"",playerId:"",gameId:"",countryCode:"",clock:null,error:""};
+const INITIAL_SESSION={status:"idle",roomId:"",playerId:"",gameId:"",countryCode:"",clock:null,rooms:[],error:""};
 let realtimeSessionState=INITIAL_SESSION;
 const realtimeListeners=new Set();
 const publishRealtimeSession=(next)=>{realtimeSessionState=next;for(const listener of realtimeListeners)listener();};
 export const getRealtimeSessionSnapshot=()=>realtimeSessionState;
 export const subscribeRealtimeSession=(listener)=>{realtimeListeners.add(listener);return()=>realtimeListeners.delete(listener);};
 export const useRealtimeSessionState=()=>useSyncExternalStore(subscribeRealtimeSession,getRealtimeSessionSnapshot,getRealtimeSessionSnapshot);
-const mergeRealtimeSnapshot=(previous,next)=>({...previous,...next,clock:next?.clock??previous?.clock??null,countries:{...(previous?.countries||{}),...(next?.countries||{})},events:Array.isArray(next?.events)?next.events:(previous?.events||[]),notifications:Array.isArray(next?.notifications)?next.notifications:(previous?.notifications||[])});
+const mergeRealtimeSnapshot=(previous,next)=>({...previous,...next,clock:next?.clock??previous?.clock??null,game:next?.game??previous?.game??null,world:next?.world??previous?.world??null,countries:{...(previous?.countries||{}),...(next?.countries||{})},events:Array.isArray(next?.events)?next.events:(previous?.events||[]),notifications:Array.isArray(next?.notifications)?next.notifications:(previous?.notifications||[])});
 
 export function useRealtimeSession(){
   const {activeGame}=useLibraryState();
   const [session,setSession]=useState(INITIAL_SESSION);
   const sessionRef=useRef(INITIAL_SESSION);
   const realtimeSnapshotRef=useRef(null);
-  const applyServerWorld=useCallback(async(snapshot,gameId,roomId,playerId,countryCode)=>{realtimeSnapshotRef.current=mergeRealtimeSnapshot(realtimeSnapshotRef.current,snapshot);let baseWorld={};try{baseWorld=await readJson(JSON_URLS.world,{defaultValue:{},force:false,clone:false})||{};}catch{}setWorldStateOverride({...baseWorld,realtime:realtimeSnapshotRef.current,multiplayer:{active:true,gameId,roomId,playerId,countryCode,clock:realtimeSnapshotRef.current?.clock||null}});},[]);
+  const applyServerWorld=useCallback(async(snapshot,gameId,roomId,playerId,countryCode)=>{realtimeSnapshotRef.current=mergeRealtimeSnapshot(realtimeSnapshotRef.current,snapshot);let baseWorld={};try{baseWorld=realtimeSnapshotRef.current?.world||await readJson(JSON_URLS.world,{defaultValue:{},force:false,clone:false})||{};}catch{}if(realtimeSnapshotRef.current?.game) primeJson(JSON_URLS.game,realtimeSnapshotRef.current.game,{clone:false});setWorldStateOverride({...baseWorld,realtime:realtimeSnapshotRef.current,multiplayer:{active:true,gameId,roomId,playerId,countryCode,clock:realtimeSnapshotRef.current?.clock||null}});},[]);
   useEffect(()=>{sessionRef.current=session;publishRealtimeSession(session);},[session]);
   const socketRef=useRef(null);
   const pendingRef=useRef(null);
@@ -52,7 +52,8 @@ export function useRealtimeSession(){
     socket.onmessage=async(event)=>{
       let message;
       try{message=JSON.parse(event.data);}catch{return;}
-      if(message.type==="ROOM_CREATED"||message.type==="ROOM_JOINED"){
+      if(message.type==="ROOM_LIST"){const next={...sessionRef.current,rooms:Array.isArray(message.rooms)?message.rooms:[]};sessionRef.current=next;setSession(next);publishRealtimeSession(next);
+      }else if(message.type==="ROOM_CREATED"||message.type==="ROOM_JOINED"){
         const gameId=String(message.gameId||message.snapshot?.gameId||"");
         const player=message.snapshot?.players?.[message.playerId];
         const countryCode=String(message.countryCode||player?.countryCode||"");
@@ -74,9 +75,11 @@ export function useRealtimeSession(){
     };
   },[activeGame?.id]);
 
-  const start=useCallback(()=>{
+  const listRooms=useCallback(()=>connect({type:"LIST_ROOMS"}),[connect]);
+
+  const start=useCallback((options={})=>{
     if(!activeGame?.id){setSession((s)=>({...s,status:"error",error:"Primero abre una partida real de Open Historia."}));return;}
-    connect({type:"CREATE_ROOM",gameId:activeGame.id,mode:"multi",name:activeGame.name,playerName:activeGame.country||"Player",countryCode:activeGame.country||""});
+    connect({type:"CREATE_ROOM",gameId:activeGame.id,mode:"multi",visibility:options.visibility==="private"?"private":"public",name:activeGame.name,playerName:activeGame.country||"Player",countryCode:activeGame.country||""});
   },[activeGame,connect]);
 
   const join=useCallback((roomId)=>{
@@ -101,5 +104,5 @@ export function useRealtimeSession(){
     return()=>{window.removeEventListener("oh:start-realtime",onStart);window.removeEventListener("oh:join-realtime",onJoin);socketRef.current?.close();setWorldStateOverride(null);};
   },[start,join]);
 
-  return {...session,start,join,command,leave};
+  return {...session,start,join,listRooms,command,leave};
 }
