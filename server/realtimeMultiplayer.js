@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { addDays } from "./realtimeSimulation.js";
 import { addPlayer, command, RealtimeRoomStore, sanitizeSnapshot, SimulationClock, normalizePlayerId } from "./realtimeSimulation.js";
 
 const MAX_FRAME_BYTES=128*1024;
@@ -31,7 +32,7 @@ const decodeFrames=(buffer)=>{
   return {frames,remaining:buffer.subarray(offset)};
 };
 
-const json=(socket,value)=>{try{socket.write(encodeFrame(JSON.stringify(value)));}catch{}};
+const json=(socket,value)=>{try{socket.write(encodeFrame(JSON.stringify(value)));}catch{ /* disconnected socket */ }};
 const id=()=>crypto.randomBytes(12).toString("base64url");
 
 export class RealtimeMultiplayer {
