@@ -349,7 +349,13 @@ export function normalizePlayerId(value){
 
 export function addPlayer(state,{playerId,name,countryCode,host=false}) {
   if(!normalizePlayerId(playerId)) throw new Error("Invalid player id");
-  if(state.players[playerId]) return state.players[playerId];
+  if(state.players[playerId]){
+    if(state.players[playerId].connected) throw new Error("Player is already connected");
+    state.players[playerId].connected=true;
+    state.players[playerId].reconnectedAt=Date.now();
+    state.playersByCountry=Object.fromEntries(Object.values(state.players).map(p=>[p.countryCode,p.id]));
+    return state.players[playerId];
+  }
   if(Object.keys(state.players).length>=state.rules.maxPlayers) throw new Error("Room is full");
   const code=String(countryCode||"").toUpperCase();
   if(!state.countries[code]) throw new Error("Unknown country");
