@@ -214,7 +214,6 @@ function progressCountry(state,country,days) {
   country.researchPoints += days * (1 + (country.modifiers.research || 0));\n\n  if(country.research.active){
     const tech=TECHNOLOGIES.find(t=>t.id===country.research.active.techId);
     country.research.active.remainingDays-=days*(1+(country.modifiers.research||0));
-    country.researchPoints += days;
     if(country.research.active.remainingDays<=0){
       country.research.completed.push(tech.id);
       addModifier(country,tech.modifiers);
