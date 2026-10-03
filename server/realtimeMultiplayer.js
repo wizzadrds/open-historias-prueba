@@ -88,6 +88,7 @@ export class RealtimeMultiplayer {
     if(client.commands.length>=MAX_COMMANDS_PER_WINDOW){throw new Error("Command rate limit exceeded");}
     client.commands.push(now);
     switch(message.type){
+      case "LIST_ROOMS": return this.listRooms(client);
       case "CREATE_ROOM": return this.createRoom(client,message);
       case "JOIN_ROOM": return this.joinRoom(client,message);
       case "SNAPSHOT": return this.snapshot(client);
@@ -98,6 +99,8 @@ export class RealtimeMultiplayer {
       default: throw new Error("Unknown websocket message type");
     }
   }
+
+  listRooms(client){json(client.socket,{type:"ROOM_LIST",rooms:this.store.list().slice(0,50)});}
 
   createRoom(client,m){
     const playerId=normalizePlayerId(m.playerId)||id();
