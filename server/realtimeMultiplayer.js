@@ -1,5 +1,7 @@
 import crypto from "crypto";
-import { addPlayer, command, RealtimeRoomStore, sanitizeSnapshot, SimulationClock, normalizePlayerId } from "./realtimeSimulation.js";
+import { addPlayer, command, RealtimeRoomStore, sanitizeSnapshot, normalizePlayerId } from "./realtimeSimulation.js";
+
+const addDays=(date,days)=>new Date(Date.parse(`${date}T00:00:00Z`)+Math.round(days)*86400000).toISOString().slice(0,10);
 
 const MAX_FRAME_BYTES=128*1024;
 const RATE_WINDOW_MS=1000;
