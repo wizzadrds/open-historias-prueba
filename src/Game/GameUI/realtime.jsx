@@ -1,4 +1,4 @@
-import React,{Component,useCallback,useEffect,useMemo,useRef,useState} from "react";
+import React,{Component,useCallback,useEffect,useRef,useState} from "react";
 
 const SPEEDS=[0,0.5,1,2,4,8];
 const COUNTRIES=[
@@ -10,11 +10,6 @@ const BUILDINGS=[
   ["factory","Industry","Industrial Plant","⚙"],["farm","Food","Agricultural Estate","▥"],
   ["power","Energy","Power Station","ϟ"],["university","Research","University","◇"],
   ["barracks","Military","Barracks","✦"]
-];
-const TECHS=[
-  ["assembly","Assembly Lines","Industry"],["public_health","Public Health","Society"],
-  ["motorization","Motorization","Military"],["electrification","National Electrification","Energy"],
-  ["combined_arms","Combined Arms","Military"],["logistics","Modern Logistics","Military"]
 ];
 
 const colors={
@@ -65,7 +60,7 @@ function SectionTitle({eyebrow,title,children}){
  </div>;
 }
 
-function Hub({room,setRoom,playerId,socket,roomId,playerName,country,command,error,setError}){
+function Hub({room,setRoom,playerId,socket,country,command,error}){
  const [tab,setTab]=useState("overview");
  const player=room?.players?.[playerId];
  const myCode=player?.countryCode||country;
@@ -99,7 +94,7 @@ function Hub({room,setRoom,playerId,socket,roomId,playerName,country,command,err
      <div style={css.main}>
        <main style={css.content}>
          <div style={css.nav}>{tabs.map(([id,label])=><button key={id} onClick={()=>setTab(id)} style={{...css.navBtn,background:tab===id?"rgba(214,179,106,.13)":"transparent",color:tab===id?colors.ink:colors.muted}}>{label}</button>)}</div>
-         {tab==="overview"&&<Overview nation={nation} events={events} units={units} activeTech={activeTech} command={command} isHost={isHost} clock={room?.clock}/>}
+         {tab==="overview"&&<Overview nation={nation} events={events} units={units} command={command} isHost={isHost} clock={room?.clock}/>}
          {tab==="economy"&&<Economy nation={nation} command={command}/>}
          {tab==="military"&&<Military nation={nation} units={units} command={command}/>}
          {tab==="diplomacy"&&<Diplomacy myCode={myCode} players={players} target={target} setTarget={setTarget} pending={pendingDip} socket={socket} room={room}/>}
@@ -142,7 +137,7 @@ function Hub({room,setRoom,playerId,socket,roomId,playerName,country,command,err
  </div>;
 }
 
-function Overview({nation,events,units,activeTech,command,isHost,clock}){
+function Overview({nation,events,units,command,isHost,clock}){
  return <div style={{paddingTop:18}}>
    <SectionTitle eyebrow="National command" title="Your country at a glance"><span style={{fontSize:11,color:colors.muted}}>The map remains the battlefield. This room is your command layer.</span></SectionTitle>
    <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:9}}>
@@ -231,5 +226,5 @@ export function RealtimeStrategy(){
  const create=()=>send(socketRef.current,{type:"CREATE_ROOM",mode:"multi",name:"Open Historia · 1920",playerName,countryCode:country});
  const join=()=>send(socketRef.current,{type:"JOIN_ROOM",roomId:joinId,playerId:localStorage.getItem("oh:rt:playerId")||undefined,playerName,countryCode:country});
  if(!open)return <div style={css.root}><button type="button" style={css.launcher} onClick={()=>setOpen(true)}>◈ <b>WAR ROOM</b></button></div>;
- return <RealtimeBoundary>{room?<Hub room={room} setRoom={setRoom} playerId={playerId} socket={socket} roomId={roomId} playerName={playerName} country={country} command={command} error={error} setError={setError}/>:<Lobby connected={connected} onCreate={create} onJoin={join} playerName={playerName} setPlayerName={setPlayerName} country={country} setCountry={setCountry} joinId={joinId} setJoinId={setJoinId} error={error}/>}</RealtimeBoundary>;
+ return <RealtimeBoundary>{room?<Hub room={room} setRoom={setRoom} playerId={playerId} socket={socket} country={country} command={command} error={error}/>:<Lobby connected={connected} onCreate={create} onJoin={join} playerName={playerName} setPlayerName={setPlayerName} country={country} setCountry={setCountry} joinId={joinId} setJoinId={setJoinId} error={error}/>}</RealtimeBoundary>;
 }
