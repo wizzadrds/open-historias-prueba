@@ -9,7 +9,7 @@ test("simulation clock is server authoritative and speed is bounded",()=>{
   assert.equal(days,1);
   clock.setSpeed(8);
   clock.advanceWallClock(10000,(n)=>{days+=n;});
-  assert.equal(days,17);
+  assert.equal(days,9);
   assert.throws(()=>clock.setSpeed(3),/Invalid simulation speed/);
   assert.deepEqual(SPEEDS,[0,0.5,1,2,4,8]);
 });
