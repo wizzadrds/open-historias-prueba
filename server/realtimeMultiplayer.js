@@ -221,7 +221,7 @@ export class RealtimeMultiplayer {
       const now=Date.now();
       if(!state.__lastTimeBroadcast||now-state.__lastTimeBroadcast>=1000){
         state.__lastTimeBroadcast=now;
-        for(const client of this.clients.values()) if(client.roomId===roomId) json(client.socket,{type:"TIME_UPDATE",clock:state.clock});
+        for(const client of this.clients.values()) if(client.roomId===roomId) json(client.socket,{type:"TIME_UPDATE",snapshot:{clock:state.clock}});
       }
       if(!state.__lastWorldBroadcast||now-state.__lastWorldBroadcast>=2000){
         state.__lastWorldBroadcast=now;
@@ -229,7 +229,7 @@ export class RealtimeMultiplayer {
           if(client.roomId!==roomId) continue;
           const player=state.players[client.playerId];
           const ownCountry=player?.countryCode?{[player.countryCode]:state.countries[player.countryCode]}:{};
-          json(client.socket,{type:"WORLD_UPDATE",revision:state.sequence,events:state.events.slice(0,12),notifications:state.notifications.slice(0,12),countries:ownCountry});
+          json(client.socket,{type:"WORLD_UPDATE",revision:state.sequence,snapshot:{clock:state.clock,events:state.events.slice(0,12),notifications:state.notifications.slice(0,12),countries:ownCountry}});
         }
       }
       const seen=state.__broadcastNotificationIds||(state.__broadcastNotificationIds=new Set());
