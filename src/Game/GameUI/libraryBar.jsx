@@ -3656,7 +3656,7 @@ const LibraryTopBar = () => {
                 )}
               </div>
             ) :
-            {activeTab === "community" ? (
+            activeTab === "community" ? (
               <Suspense
                 fallback={
                   <div style={{ color: "rgba(255,255,255,0.55)", fontSize: "0.85rem", padding: "1rem 0" }}>
