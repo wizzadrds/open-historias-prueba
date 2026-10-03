@@ -3533,8 +3533,9 @@ const LibraryTopBar = () => {
                     setEditorError("Crea o abre una partida de Open Historia antes de iniciar el multijugador.");
                     return;
                   }
-                  window.dispatchEvent(new CustomEvent("oh:start-realtime"));
-                  setMenuOpen(false);
+                  setActiveTab("multiplayer");
+                  setMenuOpen(true);
+                  realtime.listRooms();
                 }}
                 style={touchFit({
                   ...actionButtonStyle,
@@ -3548,7 +3549,7 @@ const LibraryTopBar = () => {
               >
                 {isMobile ? "◎" : realtime.status === "connecting" ? "Conectando…" : realtime.status === "in-game" ? "Online" : "Multijugador"}
               </button>
-              {["games", "scenarios", "community"].map((tab) => (
+              {["multiplayer", "games", "scenarios", "community"].map((tab) => (
                 <button
                   key={tab}
                   className="oh-tap-row"
@@ -3562,7 +3563,7 @@ const LibraryTopBar = () => {
                   }, touch)}
                   type="button"
                 >
-                  {tab === "games" ? "Games" : tab === "scenarios" ? "Scenarios" : "Community"}
+                  {tab === "multiplayer" ? "Multijugador" : tab === "games" ? "Games" : tab === "scenarios" ? "Scenarios" : "Community"}
                 </button>
               ))}
             </div>
@@ -3597,6 +3598,59 @@ const LibraryTopBar = () => {
             {activeTab !== "community" && (
               <SuggestionsBanner scenarios={scenarios} onOpen={(scenario) => openScenarioEditor(scenario.id)} />
             )}
+            {activeTab === "multiplayer" ? (
+              <div style={{ maxWidth: "62rem", margin: "0 auto", paddingBottom: "2rem" }}>
+                <div style={{ marginBottom: "1.4rem" }}>
+                  <div style={{ color: "#fff", fontSize: "1.65rem", fontWeight: 800, letterSpacing: "-0.04em" }}>Multijugador</div>
+                  <div style={{ color: "rgba(255,255,255,0.58)", marginTop: "0.35rem" }}>La partida online usa tu campaña actual, el mismo mapa y la misma fecha. No hay un segundo juego.</div>
+                </div>
+
+                {realtime.status === "in-game" ? (
+                  <div style={{ border: "1px solid rgba(214,179,106,0.32)", background: "rgba(214,179,106,0.08)", borderRadius: "16px", padding: "1.1rem" }}>
+                    <div style={{ color: "#fff", fontWeight: 800 }}>Partida online activa</div>
+                    <div style={{ color: "rgba(255,255,255,0.62)", marginTop: "0.35rem" }}>
+                      {realtime.countryCode || activeGame?.country || "País"} · {realtime.clock?.date || activeGame?.currentDate || activeGame?.gameDate || ""}
+                    </div>
+                    <button className="oh-tap-row" onClick={() => setMenuOpen(false)} style={{ ...actionButtonStyle, marginTop: "0.8rem" }} type="button">Volver al mapa</button>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2,minmax(0,1fr))", gap: "0.8rem", marginBottom: "1.4rem" }}>
+                      <button className="oh-tap-row" onClick={() => realtime.start({ visibility: "public" })} style={{ ...actionButtonStyle, minHeight: "5.4rem", justifyContent: "flex-start", flexDirection: "column", alignItems: "flex-start", gap: "0.25rem" }} type="button">
+                        <strong>Nueva partida pública</strong><span style={{ color: "rgba(255,255,255,0.58)", fontSize: "0.82rem" }}>Crear sala y volver directamente al mapa</span>
+                      </button>
+                      <button className="oh-tap-row" onClick={() => realtime.start({ visibility: "private" })} style={{ ...actionButtonStyle, minHeight: "5.4rem", justifyContent: "flex-start", flexDirection: "column", alignItems: "flex-start", gap: "0.25rem" }} type="button">
+                        <strong>Nueva partida privada</strong><span style={{ color: "rgba(255,255,255,0.58)", fontSize: "0.82rem" }}>Crear sala para compartir su código</span>
+                      </button>
+                    </div>
+
+                    {realtime.status === "error" && (
+                      <div style={{ color: "#ff9b9b", marginBottom: "1rem", fontSize: "0.88rem" }}>{realtime.error}</div>
+                    )}
+
+                    <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: "1rem" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.8rem", marginBottom: "0.65rem" }}>
+                        <strong style={{ color: "#fff" }}>Continuar partida</strong>
+                        <button className="oh-tap-row" onClick={() => realtime.listRooms()} style={actionButtonStyle} type="button">Actualizar</button>
+                      </div>
+                      {realtime.rooms?.length ? realtime.rooms.map((room) => (
+                        <div key={room.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.8rem", padding: "0.75rem 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ color: "#fff", fontWeight: 700 }}>{room.name || "Partida online"}</div>
+                            <div style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.78rem", marginTop: "0.2rem" }}>
+                              {room.visibility === "private" ? "Privada" : "Pública"} · {room.date || ""} · {room.playerCount || 0} jugadores
+                            </div>
+                          </div>
+                          <button className="oh-tap-row" onClick={() => realtime.join(room.id)} style={actionButtonStyle} type="button">Entrar</button>
+                        </div>
+                      )) : (
+                        <div style={{ color: "rgba(255,255,255,0.48)", padding: "0.8rem 0" }}>No hay salas disponibles.</div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            ) :
             {activeTab === "community" ? (
               <Suspense
                 fallback={
