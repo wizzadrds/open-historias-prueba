@@ -102,10 +102,10 @@ const addModifier = (country, modifiers, factor=1) => {
 
 const effective = (country,key,base) => base * (1 + (country.modifiers[key] || 0));
 
-export function createInitialRealtimeState({id,mode="single",name="1920 Campaign",seed=19200101,createdAt=Date.now()}={}) {
+export function createInitialRealtimeState({id,mode="single",name="1920 Campaign",seed=19200101,createdAt=Date.now(),gameId="",scenarioId="",startDate=REALTIME_START_DATE}={}) {
   const state = {
-    version:1,id,mode,name,seed,sequence:0,createdAt,lastSavedAt:createdAt,
-    clock:{date:REALTIME_START_DATE,speed:1,paused:false,lastWallClockMs:createdAt,accumulatorMs:0},
+    version:1,id,mode,name,seed,gameId:String(gameId||""),scenarioId:String(scenarioId||""),sequence:0,createdAt,lastSavedAt:createdAt,
+    clock:{date:String(startDate||REALTIME_START_DATE),speed:1,paused:false,lastWallClockMs:createdAt,accumulatorMs:0},
     countries:defaultCountries(),
     players:{},rooms:{hostPlayerId:null},
     events:[],notifications:[],chat:[],diplomacyRequests:[],rules:{
