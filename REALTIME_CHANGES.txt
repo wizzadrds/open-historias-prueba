@@ -93,3 +93,6 @@ Rama: feature/realtime-strategy-sim
 15. Validación pendiente
 - La infraestructura de ejecución local de este entorno no pudo clonar GitHub directamente por resolución DNS; por ello la validación de runtime se deja a CI del repositorio.
 - La rama contiene tests y documentación para que el workflow del repositorio ejecute la suite completa.
+
+
+Post-fix verification: corrected the realtime module import and server source escaping that caused cascading server-test failures.
