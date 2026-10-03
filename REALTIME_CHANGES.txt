@@ -1,0 +1,95 @@
+Open Historia — cambios de la capa realtime / estrategia
+============================================================
+
+Fecha: 2026-10-03
+Rama: feature/realtime-strategy-sim
+
+1. Arquitectura
+- Se añadió server/realtimeSimulation.js como motor modular de simulación continua.
+- Se añadió server/realtimeMultiplayer.js como transporte WebSocket y autoridad de comandos.
+- La implementación es aditiva: el motor histórico por turnos, escenarios, editor, PMTiles, Electron y Android existentes no se sustituyen.
+- La simulación realtime usa un esquema de estado independiente y versionado.
+
+2. Tiempo autoritativo
+- Todas las salas empiezan el 1920-01-01.
+- SimulationClock vive en el servidor.
+- Velocidades permitidas: pausa/x0.5/x1/x2/x4/x8.
+- A x1 se simula un día cada 5 segundos reales.
+- El cliente nunca escribe la fecha canónica.
+- Se limita el catch-up para evitar saltos ilimitados tras periodos extremos de desconexión.
+
+3. Multiplayer / red
+- WebSocket en /ws/realtime.
+- CREATE_ROOM y JOIN_ROOM.
+- Host único por sala para controles de velocidad.
+- Selección de país con bloqueo de doble ocupación.
+- PLAYER_JOINED / PLAYER_LEFT.
+- Reconexión mediante playerId persistente y estado disconnected.
+- CHAT humano en tiempo real.
+- DIPLOMACY_REQUEST / DIPLOMACY_RESPONSE con validación del destinatario.
+- Actualizaciones personalizadas por jugador para no emitir indiscriminadamente el estado completo de todos los países.
+- Control de origen WebSocket y límite de comandos por segundo.
+- Los comandos son intenciones validadas; no existe una operación de “set state” desde cliente.
+
+4. Single-player + IA
+- Una sala individual funciona con el resto de países gobernados por IA determinista.
+- La IA construye, investiga y mueve unidades.
+- No se usa LLM por unidad.
+
+5. Economía y población
+- Recursos: dinero, comida, energía, materias primas, capacidad industrial, población.
+- Producción y crecimiento avanzan con el tiempo.
+- Los modificadores de edificios y tecnologías se aplican mecánicamente.
+
+6. Construcción
+- Tipos: fábrica, granja, central eléctrica, universidad y cuartel.
+- Cola de construcción, costes, niveles, región, días restantes y salud.
+- Las obras continúan durante la simulación y después de una desconexión.
+
+7. Investigación
+- Árbol inicial con Assembly Lines, Public Health, Motorization, Electrification, Combined Arms y Logistics.
+- Investigación activa con coste, progreso y fecha.
+- Las tecnologías desbloquean modificadores reales.
+
+8. Eventos y decisiones
+- Eventos con id, createdAt, expiresAt, prioridad, categoría, opciones y efectos.
+- Pandemia, huelga, crisis alimentaria y crisis energética.
+- Las decisiones no pausan el tiempo.
+- Los eventos caducados se resuelven automáticamente.
+- Los efectos modifican recursos, población y modificadores.
+
+9. Militar
+- Unidades de infantería, blindados y artillería.
+- Movimiento con destino y ETA consumiendo días de simulación.
+- El servidor comprueba propiedad de la unidad y límites de coordenadas.
+
+10. HUD
+- Nuevo panel src/Game/GameUI/realtime.jsx.
+- Crear sala individual o multijugador.
+- Unirse mediante ID.
+- Fecha, velocidad, recursos, construcción, investigación, eventos, unidades, diplomacia y chat.
+- Identidad de jugador persistida para facilitar reconexión.
+- El mapa existente sigue siendo el fondo/protagonista; el panel no reemplaza el renderer cartográfico.
+
+11. Persistencia
+- Las salas realtime se guardan bajo DATA_DIR/realtime/<room>.json.
+- Guardado periódico y después de comandos.
+- El estado se recupera al reiniciar el proceso y vuelve a avanzar con el reloj autoritativo.
+
+12. Tests
+- server/realtimeSimulation.test.js:
+  reloj, velocidades, catch-up, construcción, investigación, eventos, movimiento y autoridad.
+- server/realtimeMultiplayer.test.js:
+  creación de sala, ocupación de países, reconexión y control host-only.
+
+13. Documentación
+- docs/realtime-multiplayer.md documenta el reloj, protocolo WebSocket, persistencia, IA y compatibilidad.
+
+14. Integración
+- server/server.js registra el transporte realtime sobre el mismo httpServer.
+- src/Game/GameUI/main.jsx incorpora el panel realtime.
+- No se modifica el motor legacy de turnos para evitar regresiones de escenarios existentes.
+
+15. Validación pendiente
+- La infraestructura de ejecución local de este entorno no pudo clonar GitHub directamente por resolución DNS; por ello la validación de runtime se deja a CI del repositorio.
+- La rama contiene tests y documentación para que el workflow del repositorio ejecute la suite completa.
