@@ -3534,7 +3534,7 @@ const LibraryTopBar = () => {
                 }, touch)}
                 type="button"
               >
-                {isMobile ? "◎" : "Multiplayer"}
+                {isMobile ? "◎" : "Multijugador"}
               </button>
               {["games", "scenarios", "community"].map((tab) => (
                 <button
