@@ -15,9 +15,9 @@ class MemoryStore {
 }
 
 test("multiplayer room creation and country ownership are server-side",()=>{
- const server=new FakeServer(),store=new MemoryStore(),rt=new RealtimeMultiplayer(server,{store});
+ const server=new FakeServer(),store=new MemoryStore(),rt=new RealtimeMultiplayer(server,{store,gameLoader:()=>({game:{id:"game-1",name:"Test Game",scenarioId:"default"},scenario:{id:"default"},data:{game:{gameDate:"1920-01-01"}}})});
  const client={socket:{write(){}},commands:[]};
- rt.message(client,{type:"CREATE_ROOM",mode:"multi",playerId:"player01",playerName:"Host",countryCode:"GBR"});
+ rt.message(client,{type:"CREATE_ROOM",gameId:"game-1",mode:"multi",playerId:"player01",playerName:"Host",countryCode:"GBR"});
  assert.equal(client.roomId,"room-1");
  const state=store.load("room-1");
  assert.equal(state.rooms.hostPlayerId,"player01");
@@ -29,7 +29,7 @@ test("multiplayer room creation and country ownership are server-side",()=>{
 });
 
 test("reconnect can reuse a disconnected identity without duplicating a country",()=>{
- const server=new FakeServer(),store=new MemoryStore(),rt=new RealtimeMultiplayer(server,{store});
+ const server=new FakeServer(),store=new MemoryStore(),rt=new RealtimeMultiplayer(server,{store,gameLoader:()=>({game:{id:"game-1",name:"Test Game",scenarioId:"default"},scenario:{id:"default"},data:{game:{gameDate:"1920-01-01"}}})});
  const first={socket:{write(){}},commands:[]};
  rt.message(first,{type:"CREATE_ROOM",gameId:"game-1",mode:"multi",playerId:"player11",playerName:"Host",countryCode:"GBR"});
  const state=store.load(first.roomId);
@@ -41,7 +41,7 @@ test("reconnect can reuse a disconnected identity without duplicating a country"
 });
 
 test("foreign clients cannot use a player's command channel to change time",()=>{
- const server=new FakeServer(),store=new MemoryStore(),rt=new RealtimeMultiplayer(server,{store});
+ const server=new FakeServer(),store=new MemoryStore(),rt=new RealtimeMultiplayer(server,{store,gameLoader:()=>({game:{id:"game-1",name:"Test Game",scenarioId:"default"},scenario:{id:"default"},data:{game:{gameDate:"1920-01-01"}}})});
  const host={socket:{write(){}},commands:[]};
  rt.message(host,{type:"CREATE_ROOM",gameId:"game-1",mode:"multi",playerId:"player21",playerName:"Host",countryCode:"GBR"});
  const guest={socket:{write(){}},commands:[]};
@@ -51,7 +51,7 @@ test("foreign clients cannot use a player's command channel to change time",()=>
 
 
 test("human diplomacy creates an expiring request and only the recipient can answer",()=>{
- const server=new FakeServer(),store=new MemoryStore(),rt=new RealtimeMultiplayer(server,{store});
+ const server=new FakeServer(),store=new MemoryStore(),rt=new RealtimeMultiplayer(server,{store,gameLoader:()=>({game:{id:"game-1",name:"Test Game",scenarioId:"default"},scenario:{id:"default"},data:{game:{gameDate:"1920-01-01"}}})});
  const host={socket:{write(){}},commands:[]};
  rt.message(host,{type:"CREATE_ROOM",gameId:"game-1",mode:"multi",playerId:"player31",playerName:"Host",countryCode:"GBR"});
  const guest={socket:{write(){}},commands:[]};
