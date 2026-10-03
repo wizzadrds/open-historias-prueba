@@ -70,7 +70,7 @@ const writeJsonAtomic = (file,value) => {
 
 const makeCountry = ([code,name,population,money,food,energy,rawMaterials,industrialCapacity]) => ({
   code,name,population,money,food,energy,rawMaterials,industrialCapacity,
-  researchPoints:0,research:{completed:[],active:null},buildings:[],
+  researchPoints:100,research:{completed:[],active:null},buildings:[],
   constructionQueue:[],productionQueue:[],units:[],
   modifiers:{industrialCapacity:0,food:0,energy:0,research:0,populationGrowth:0,armySpeed:0,armyPower:0,troops:0},
   diplomacy:{relations:{},pending:[]},
@@ -211,7 +211,7 @@ function progressCountry(state,country,days) {
     state.notifications.unshift({id:nextId("notification",state),at:state.clock.date,kind:"BUILDING_COMPLETE",message:`${BUILDINGS[item.type].label} completed`,countryCode:country.code});
   }
 
-  if(country.research.active){
+  country.researchPoints += days * (1 + (country.modifiers.research || 0));\n\n  if(country.research.active){
     const tech=TECHNOLOGIES.find(t=>t.id===country.research.active.techId);
     country.research.active.remainingDays-=days*(1+(country.modifiers.research||0));
     country.researchPoints += days;
