@@ -1471,7 +1471,11 @@ export const httpServer = app.listen(PORT, HOST, () => {
 
 // Realtime strategy transport. The legacy HTTP/turn systems remain intact; realtime
 // rooms share the same process but have their own authoritative state and clock.
-export const realtimeMultiplayer = attachRealtimeMultiplayer(httpServer);\nconst realtimeBroadcastTimer = setInterval(() => realtimeMultiplayer.tickBroadcast(), 250);\nrealtimeBroadcastTimer.unref?.();\n\n// Move the listener to a different interface in place, so the LAN toggle takes
+export const realtimeMultiplayer = attachRealtimeMultiplayer(httpServer);
+const realtimeBroadcastTimer = setInterval(() => realtimeMultiplayer.tickBroadcast(), 250);
+realtimeBroadcastTimer.unref?.();
+
+// Move the listener to a different interface in place, so the LAN toggle takes
 // effect immediately instead of asking the player to restart a game they are in
 // the middle of. Node lets a closed server listen() again; if the new bind
 // fails (something else already holds the port on that interface) we go back to
