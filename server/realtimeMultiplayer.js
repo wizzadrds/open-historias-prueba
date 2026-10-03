@@ -202,11 +202,23 @@ export class RealtimeMultiplayer {
       const now=Date.now();
       if(!state.__lastTimeBroadcast||now-state.__lastTimeBroadcast>=1000){
         state.__lastTimeBroadcast=now;
-        this.broadcast(roomId,{type:"TIME_UPDATE",clock:state.clock});
+        for(const client of this.clients.values()) if(client.roomId===roomId) json(client.socket,{type:"TIME_UPDATE",clock:state.clock});
       }
       if(!state.__lastWorldBroadcast||now-state.__lastWorldBroadcast>=2000){
         state.__lastWorldBroadcast=now;
-        this.broadcast(roomId,{type:"WORLD_UPDATE",revision:state.sequence,events:state.events.slice(0,12),notifications:state.notifications.slice(0,12)});
+        for(const client of this.clients.values()){
+          if(client.roomId!==roomId) continue;
+          const player=state.players[client.playerId];
+          const ownCountry=player?.countryCode?{[player.countryCode]:state.countries[player.countryCode]}:{};
+          json(client.socket,{type:"WORLD_UPDATE",revision:state.sequence,events:state.events.slice(0,12),notifications:state.notifications.slice(0,12),countries:ownCountry});
+        }
+      }
+      const seen=state.__broadcastNotificationIds||(state.__broadcastNotificationIds=new Set());
+      for(const notification of (state.notifications||[]).slice(0,20)){
+        if(seen.has(notification.id)) continue;
+        seen.add(notification.id);
+        const type=notification.kind==="EVENT_CREATED"?"EVENT_CREATED":notification.kind==="EVENT_RESOLVED"?"EVENT_RESOLVED":notification.kind==="DIPLOMACY_REQUEST"?"DIPLOMACY_REQUEST":notification.kind==="DIPLOMACY_RESPONSE"?"DIPLOMACY_RESPONSE":"NOTIFICATION";
+        this.broadcast(roomId,{type,notification});
       }
     }
   }
